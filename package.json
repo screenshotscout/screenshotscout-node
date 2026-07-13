@@ -1,0 +1,53 @@
+{
+  "name": "@screenshotscout/sdk",
+  "version": "0.1.0",
+  "description": "Official Node.js and TypeScript SDK for Screenshot Scout.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"const fs = require('node:fs'); for (const path of ['dist']) fs.rmSync(path, { force: true, recursive: true });\"",
+    "prepack": "npm run clean && npm run build",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/screenshotscout/screenshotscout-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/screenshotscout/screenshotscout-node/issues"
+  },
+  "homepage": "https://github.com/screenshotscout/screenshotscout-node#readme",
+  "keywords": [
+    "screenshot",
+    "screenshotscout",
+    "sdk"
+  ],
+  "author": "Oleksii Velykyi",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  }
+}

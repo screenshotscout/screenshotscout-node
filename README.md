@@ -5,6 +5,7 @@ The official Node.js and TypeScript SDK for the Screenshot Scout screenshot API.
 ## Requirements
 
 - Node.js 22 or newer
+- CommonJS `require()` requires Node.js 22.12 or newer
 
 ## Installation
 

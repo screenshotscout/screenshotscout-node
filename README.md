@@ -13,6 +13,14 @@ The official Node.js and TypeScript SDK for the Screenshot Scout screenshot API.
 npm install @screenshotscout/sdk
 ```
 
+The package works with JavaScript and TypeScript, with TypeScript declarations included automatically. Unless marked otherwise, the examples below use JavaScript with ES module syntax and also work in TypeScript.
+
+In a CommonJS project running Node.js 22.12 or newer, load the SDK with `require()`:
+
+```js
+const { ScreenshotScoutClient } = require("@screenshotscout/sdk");
+```
+
 ## Get your API credentials
 
 Before using the SDK, [sign up for Screenshot Scout](https://screenshotscout.com/) or sign in to your existing account. Screenshot Scout automatically creates a default API key when you sign up.
@@ -23,12 +31,15 @@ Open the [API Keys page](https://screenshotscout.com/app/api-keys), copy the acc
 
 `capture()` uses POST by default and resolves when the screenshot is ready.
 
-```ts
+```js
 import { writeFile } from "node:fs/promises";
 import { ScreenshotScoutClient } from "@screenshotscout/sdk";
 
+const accessKey = process.env.SCREENSHOTSCOUT_ACCESS_KEY;
+if (!accessKey) throw new Error("Set SCREENSHOTSCOUT_ACCESS_KEY first.");
+
 const client = new ScreenshotScoutClient({
-  accessKey: process.env.SCREENSHOTSCOUT_ACCESS_KEY!,
+  accessKey,
 });
 
 const response = await client.capture("https://example.com", {
@@ -43,7 +54,7 @@ By default, `capture()` returns a `BinaryCaptureResponse`, with the screenshot a
 
 ## Request a JSON result
 
-```ts
+```js
 import {
   CaptureResponseType,
   ScreenshotScoutClient,
@@ -66,7 +77,7 @@ Set `responseType` to `CaptureResponseType.JSON` to receive screenshot metadata 
 
 POST is the default. To use GET, set `method` to `CaptureHttpMethod.GET`:
 
-```ts
+```js
 import {
   CaptureHttpMethod,
   ScreenshotScoutClient,
@@ -83,7 +94,7 @@ await client.capture("https://example.com", {
 
 Pass the API key's secret key to sign GET and POST requests automatically. The secret is used locally and is never transmitted:
 
-```ts
+```js
 const client = new ScreenshotScoutClient({
   accessKey: "YOUR_ACCESS_KEY",
   secretKey: "YOUR_SECRET_KEY",
@@ -115,7 +126,7 @@ Use `method` to select GET and `signal` to cancel a call.
 
 Use the exported constants for autocomplete. Raw string values are also accepted:
 
-```ts
+```js
 import {
   CaptureFormat,
   CaptureWaitUntil,
@@ -133,7 +144,7 @@ See the [Screenshot Scout option reference](https://screenshotscout.com/docs/scr
 
 ## Timeouts and cancellation
 
-```ts
+```js
 await client.capture("https://example.com", {
   timeout: 180, // service-side capture budget, in seconds
   signal: AbortSignal.timeout(300_000), // caller-side deadline, in milliseconds
@@ -168,7 +179,7 @@ const client = new ScreenshotScoutClient({
 
 Every successful response has `rawResponse`, containing its status, headers, content type, and body bytes. `ScreenshotScoutApiError` provides the same raw-response access.
 
-```ts
+```js
 import {
   ScreenshotScoutApiError,
   ScreenshotScoutConfigurationError,

@@ -1,7 +1,4 @@
-import {
-  ScreenshotScoutClient,
-  type CaptureOptions,
-} from "@screenshotscout/sdk";
+import { ScreenshotScoutClient } from "@screenshotscout/sdk";
 
 const accessKey = process.env.SCREENSHOTSCOUT_ACCESS_KEY;
 if (!accessKey) throw new Error("Set SCREENSHOTSCOUT_ACCESS_KEY first.");
@@ -12,9 +9,9 @@ const client = new ScreenshotScoutClient({
   ...(secretKey ? { secretKey } : {}),
 });
 
-const captureOptions = {
-  fullPage: true,
-  blockAds: true,
-} satisfies CaptureOptions;
-
-console.log(client.buildCaptureUrl("https://example.com", captureOptions));
+console.log(
+  client.buildCaptureUrl("https://example.com", {
+    fullPage: true,
+    blockAds: true,
+  }),
+);

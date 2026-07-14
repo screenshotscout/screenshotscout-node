@@ -5,18 +5,21 @@ import {
 import { CaptureHttpMethod } from "./types.js";
 import type {
   CaptureOptions,
-  CaptureServiceOptions,
+  CaptureRequestOptions,
 } from "./types.js";
 
 type WireScalar = string | number | boolean;
 export type WireJsonValue = WireScalar | WireScalar[];
 export type WirePair = readonly [name: string, value: string];
 
-export interface SerializedCaptureRequest {
-  readonly method: CaptureHttpMethod;
-  readonly signal: AbortSignal | undefined;
+export interface SerializedCaptureOptions {
   readonly pairs: readonly WirePair[];
   readonly body: Readonly<Record<string, WireJsonValue>>;
+}
+
+export interface SerializedCaptureRequest extends SerializedCaptureOptions {
+  readonly method: CaptureHttpMethod;
+  readonly signal: AbortSignal | undefined;
 }
 
 const WIRE_NAMES = {
@@ -87,9 +90,9 @@ const WIRE_NAMES = {
   storageBucket: "storage_bucket",
   storageRegion: "storage_region",
   storageObjectKey: "storage_object_key",
-} as const satisfies Readonly<Record<keyof CaptureServiceOptions, string>>;
+} as const satisfies Readonly<Record<keyof CaptureOptions, string>>;
 
-const REPEATED_OPTIONS = new Set<keyof CaptureServiceOptions>([
+const REPEATED_OPTIONS = new Set<keyof CaptureOptions>([
   "cookies",
   "headers",
   "hideSelectors",
@@ -99,18 +102,15 @@ const REPEATED_OPTIONS = new Set<keyof CaptureServiceOptions>([
   "injectJs",
 ]);
 
-const ALLOWED_OPTION_KEYS = new Set<string>([
-  ...Object.keys(WIRE_NAMES),
-  "method",
-  "signal",
-]);
+const ALLOWED_OPTION_KEYS = new Set<string>(Object.keys(WIRE_NAMES));
+const ALLOWED_REQUEST_OPTION_KEYS = new Set<string>(["method", "signal"]);
 
-export function serializeCaptureRequest(
+export function serializeCaptureOptions(
   targetUrl: string,
   options?: CaptureOptions | null,
-): SerializedCaptureRequest {
+): SerializedCaptureOptions {
   try {
-    return serializeCaptureRequestUnsafe(targetUrl, options);
+    return serializeCaptureOptionsUnsafe(targetUrl, options);
   } catch (error) {
     if (error instanceof ScreenshotScoutError) throw error;
     throw new ScreenshotScoutSerializationError(
@@ -121,10 +121,32 @@ export function serializeCaptureRequest(
   }
 }
 
-function serializeCaptureRequestUnsafe(
+export function serializeCaptureRequest(
   targetUrl: string,
   options?: CaptureOptions | null,
+  captureRequestOptions?: CaptureRequestOptions | null,
 ): SerializedCaptureRequest {
+  const serialized = serializeCaptureOptions(targetUrl, options);
+
+  try {
+    const request = serializeCaptureRequestOptionsUnsafe(
+      captureRequestOptions,
+    );
+    return { ...serialized, ...request };
+  } catch (error) {
+    if (error instanceof ScreenshotScoutError) throw error;
+    throw new ScreenshotScoutSerializationError(
+      "Capture request options could not be serialized.",
+      undefined,
+      { cause: error },
+    );
+  }
+}
+
+function serializeCaptureOptionsUnsafe(
+  targetUrl: string,
+  options?: CaptureOptions | null,
+): SerializedCaptureOptions {
   if (typeof targetUrl !== "string") {
     throw new ScreenshotScoutSerializationError(
       "The capture target URL must be a string.",
@@ -151,36 +173,10 @@ function serializeCaptureRequestUnsafe(
     }
   }
 
-  const methodValue = options?.method;
-  const method =
-    methodValue === undefined || methodValue === null
-      ? CaptureHttpMethod.POST
-      : methodValue;
-  if (method !== CaptureHttpMethod.GET && method !== CaptureHttpMethod.POST) {
-    throw new ScreenshotScoutSerializationError(
-      'The capture method must be CaptureHttpMethod.GET or CaptureHttpMethod.POST.',
-      "method",
-    );
-  }
-
-  const signalValue = options?.signal;
-  const signal =
-    signalValue === undefined || signalValue === null
-      ? undefined
-      : signalValue;
-  if (signal !== undefined && !isAbortSignal(signal)) {
-    throw new ScreenshotScoutSerializationError(
-      "The capture signal must be an AbortSignal.",
-      "signal",
-    );
-  }
-
   const pairs: WirePair[] = [["url", targetUrl]];
   const body: Record<string, WireJsonValue> = { url: targetUrl };
 
-  for (const property of Object.keys(WIRE_NAMES) as Array<
-    keyof CaptureServiceOptions
-  >) {
+  for (const property of Object.keys(WIRE_NAMES) as Array<keyof CaptureOptions>) {
     const value = options?.[property];
     if (value === undefined || value === null) continue;
 
@@ -220,7 +216,57 @@ function serializeCaptureRequestUnsafe(
     body[wireName] = value;
   }
 
-  return { method, signal, pairs, body };
+  return { pairs, body };
+}
+
+function serializeCaptureRequestOptionsUnsafe(
+  captureRequestOptions?: CaptureRequestOptions | null,
+): Pick<SerializedCaptureRequest, "method" | "signal"> {
+  if (
+    captureRequestOptions !== undefined &&
+    captureRequestOptions !== null &&
+    (typeof captureRequestOptions !== "object" ||
+      Array.isArray(captureRequestOptions))
+  ) {
+    throw new ScreenshotScoutSerializationError(
+      "Capture request options must be an object when provided.",
+    );
+  }
+
+  for (const key of Object.keys(captureRequestOptions ?? {})) {
+    if (!ALLOWED_REQUEST_OPTION_KEYS.has(key)) {
+      throw new ScreenshotScoutSerializationError(
+        `Unknown capture request option "${key}".`,
+        key,
+      );
+    }
+  }
+
+  const methodValue = captureRequestOptions?.method;
+  const method =
+    methodValue === undefined || methodValue === null
+      ? CaptureHttpMethod.POST
+      : methodValue;
+  if (method !== CaptureHttpMethod.GET && method !== CaptureHttpMethod.POST) {
+    throw new ScreenshotScoutSerializationError(
+      'The capture method must be CaptureHttpMethod.GET or CaptureHttpMethod.POST.',
+      "method",
+    );
+  }
+
+  const signalValue = captureRequestOptions?.signal;
+  const signal =
+    signalValue === undefined || signalValue === null
+      ? undefined
+      : signalValue;
+  if (signal !== undefined && !isAbortSignal(signal)) {
+    throw new ScreenshotScoutSerializationError(
+      "The capture signal must be an AbortSignal.",
+      "signal",
+    );
+  }
+
+  return { method, signal };
 }
 
 export function buildCanonicalQuery(

@@ -26,7 +26,6 @@ export type {
   CaptureRequestOptions,
   CaptureResponse,
   CaptureResult,
-  CaptureServiceOptions,
   JsonCaptureOptions,
   JsonCaptureResponse,
   OpenString,

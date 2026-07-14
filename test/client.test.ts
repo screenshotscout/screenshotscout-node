@@ -16,6 +16,7 @@ import type {
   CaptureFormat as CaptureFormatType,
   CaptureHttpMethod as CaptureHttpMethodType,
   CaptureOptions,
+  CaptureRequestOptions,
   CaptureResponse,
   CaptureResponseType as CaptureResponseTypeValue,
   JsonCaptureResponse,
@@ -167,11 +168,13 @@ test("POST is the default and serializes the complete typed option surface", asy
     storageBucket: "",
     storageRegion: "",
     storageObjectKey: "",
+  };
+  const captureRequestOptions: CaptureRequestOptions = {
     method: CaptureHttpMethod.POST,
     signal: controller.signal,
   };
 
-  await client.capture("", options);
+  await client.capture("", options, captureRequestOptions);
   assert.equal(transport.calls.length, 1);
   const call = transport.calls[0]!;
   assert.equal(
@@ -262,18 +265,23 @@ test("null options and empty repeated collections are omitted without SDK defaul
     fetch: transport.fetch,
   });
 
-  await client.capture("https://example.com", {
-    format: null,
-    cookies: [],
-    headers: [],
-    hideSelectors: [],
-    clickSelectors: [],
-    clickAllSelectors: [],
-    injectCss: [],
-    injectJs: [],
-    method: null,
-    signal: null,
-  });
+  await client.capture(
+    "https://example.com",
+    {
+      format: null,
+      cookies: [],
+      headers: [],
+      hideSelectors: [],
+      clickSelectors: [],
+      clickAllSelectors: [],
+      injectCss: [],
+      injectJs: [],
+    },
+    {
+      method: null,
+      signal: null,
+    },
+  );
 
   assert.deepEqual(callJsonBody(transport.calls[0]!), {
     url: "https://example.com",
@@ -287,14 +295,17 @@ test("GET uses repeated query parameters in caller order and never sends credent
     fetch: transport.fetch,
   });
 
-  await client.capture("https://example.com/a path", {
-    method: CaptureHttpMethod.GET,
-    cookies: ["a=1", "a=1"],
-    headers: ["X-Test:one", "X-Test:one"],
-    delay: 0,
-    fullPage: false,
-    cacheKey: "",
-  });
+  await client.capture(
+    "https://example.com/a path",
+    {
+      cookies: ["a=1", "a=1"],
+      headers: ["X-Test:one", "X-Test:one"],
+      delay: 0,
+      fullPage: false,
+      cacheKey: "",
+    },
+    { method: CaptureHttpMethod.GET },
+  );
 
   const call = transport.calls[0]!;
   const url = callUrl(call);
@@ -315,13 +326,52 @@ test("GET uses repeated query parameters in caller order and never sends credent
   );
 });
 
+test("buildCaptureUrl creates an unsigned GET URL without calling the transport", () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "query-key",
+    fetch: transport.fetch,
+  });
+  const options = {
+    cookies: ["a=1", "a=1"],
+    headers: ["X-Test:one", "X-Test:one"],
+    delay: 0,
+    fullPage: false,
+    cacheKey: "",
+  } satisfies CaptureOptions;
+
+  const url = new URL(
+    client.buildCaptureUrl("https://example.com/a path", options),
+  );
+
+  assert.equal(transport.calls.length, 0);
+  assert.equal(url.origin, "https://api.screenshotscout.com");
+  assert.equal(url.pathname, "/v1/capture");
+  assert.equal(url.searchParams.get("access_key"), "query-key");
+  assert.equal(url.searchParams.has("signature"), false);
+  assert.deepEqual(url.searchParams.getAll("cookies"), ["a=1", "a=1"]);
+  assert.deepEqual(url.searchParams.getAll("headers"), [
+    "X-Test:one",
+    "X-Test:one",
+  ]);
+  assert.equal(
+    url.search.slice(1),
+    "access_key=query-key&url=https%3A%2F%2Fexample.com%2Fa+path&cookies=a%3D1&cookies=a%3D1&headers=X-Test%3Aone&headers=X-Test%3Aone&delay=0&full_page=false&cache_key=",
+  );
+});
+
 test("unsafe structures fail locally without calling the transport", async (t) => {
   const cases: Array<[string, string | number, unknown]> = [
     ["unknown option", "https://example.com", { unknownOption: "x" }],
     ["nested scalar", "https://example.com", { format: { value: "png" } }],
     ["non-finite number", "https://example.com", { imageWidth: Infinity }],
     ["invalid repeated value", "https://example.com", { headers: ["x:y", 1] }],
-    ["open method value", "https://example.com", { method: "get" }],
+    ["old method option", "https://example.com", { method: "GET" }],
+    [
+      "old signal option",
+      "https://example.com",
+      { signal: new AbortController().signal },
+    ],
     ["non-string URL", 123, {}],
   ];
 
@@ -342,9 +392,35 @@ test("unsafe structures fail locally without calling the transport", async (t) =
       assert.equal(transport.calls.length, 0);
     });
   }
+
+  const requestCases: Array<[string, unknown]> = [
+    ["non-object request options", 1],
+    ["unknown request option", { unknownOption: true }],
+    ["open method value", { method: "get" }],
+    ["invalid signal", { signal: {} }],
+  ];
+
+  for (const [name, captureRequestOptions] of requestCases) {
+    await t.test(name, async () => {
+      const transport = recordingFetch();
+      const client = new ScreenshotScoutClient({
+        accessKey: "key",
+        fetch: transport.fetch,
+      });
+      await assert.rejects(
+        client.capture(
+          "https://example.com",
+          {},
+          captureRequestOptions as CaptureRequestOptions,
+        ),
+        ScreenshotScoutSerializationError,
+      );
+      assert.equal(transport.calls.length, 0);
+    });
+  }
 });
 
-test("GET and POST signing match the API canonicalization algorithm", async () => {
+test("GET, POST, and generated URL signing match the API algorithm", async () => {
   const transport = recordingFetch(
     () =>
       new Response("{}", {
@@ -367,19 +443,22 @@ test("GET and POST signing match the API canonicalization algorithm", async () =
   const expectedSignature =
     "0c4928ba691575903f27b911b8ea1a536604ca070d60d886e10c127c05e236fc";
 
-  await client.capture(targetUrl, {
-    ...sharedOptions,
+  await client.capture(targetUrl, sharedOptions, {
     method: CaptureHttpMethod.GET,
   });
-  await client.capture(targetUrl, {
-    ...sharedOptions,
+  await client.capture(targetUrl, sharedOptions, {
     method: CaptureHttpMethod.POST,
   });
+  const builtUrl = new URL(client.buildCaptureUrl(targetUrl, sharedOptions));
 
   const getUrl = callUrl(transport.calls[0]!);
   const postBody = callJsonBody(transport.calls[1]!);
+  assert.equal(transport.calls.length, 2);
   assert.equal(getUrl.searchParams.get("signature"), expectedSignature);
   assert.equal(postBody.signature, expectedSignature);
+  assert.equal(builtUrl.searchParams.get("signature"), expectedSignature);
+  assert.equal(builtUrl.searchParams.get("access_key"), "ak_test");
+  assert.equal(builtUrl.toString().includes("sk_test"), false);
   assert.equal(getUrl.searchParams.has("access_key"), false);
   assert.equal(Object.hasOwn(postBody, "access_key"), false);
   assert.deepEqual(postBody.headers, ["X-Test:one", "X-Test:two"]);
@@ -708,7 +787,11 @@ test("caller cancellation follows AbortSignal semantics and is not wrapped", asy
   controller.abort(reason);
 
   await assert.rejects(
-    client.capture("https://example.com", { signal: controller.signal }),
+    client.capture(
+      "https://example.com",
+      undefined,
+      { signal: controller.signal },
+    ),
     (error: unknown) => error === reason,
   );
   assert.equal(transport.calls.length, 0);
@@ -736,10 +819,20 @@ function assertCaptureReturnTypes(
   const dynamicResponse: Promise<CaptureResponse> = client.capture(
     "https://example.com",
     dynamicOptions,
+    { method: CaptureHttpMethod.GET },
   );
   const maybeDynamicResponse: Promise<CaptureResponse> = client.capture(
     "https://example.com",
     maybeDynamicOptions,
+  );
+  const signaledResponse: Promise<BinaryCaptureResponse> = client.capture(
+    "https://example.com",
+    undefined,
+    { signal: AbortSignal.timeout(1_000) },
+  );
+  const captureUrl: string = client.buildCaptureUrl(
+    "https://example.com",
+    dynamicOptions,
   );
 
   void defaultResponse;
@@ -747,6 +840,8 @@ function assertCaptureReturnTypes(
   void jsonResponse;
   void dynamicResponse;
   void maybeDynamicResponse;
+  void signaledResponse;
+  void captureUrl;
 }
 
 void assertCaptureReturnTypes;
@@ -756,7 +851,12 @@ test("method values are closed while service string values remain open", () => {
   const futureFormat: CaptureFormatType = "future-format";
   // @ts-expect-error CaptureHttpMethod deliberately rejects arbitrary strings.
   const invalidMethod: CaptureHttpMethodType = "get";
+  const invalidCaptureOptions: CaptureOptions = {
+    // @ts-expect-error Request controls do not belong in CaptureOptions.
+    method: CaptureHttpMethod.GET,
+  };
   assert.equal(method, "GET");
   assert.equal(futureFormat, "future-format");
   void invalidMethod;
+  void invalidCaptureOptions;
 });

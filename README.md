@@ -25,7 +25,7 @@ const { ScreenshotScoutClient } = require("@screenshotscout/sdk");
 
 Before using the SDK, [sign up for Screenshot Scout](https://screenshotscout.com/) or sign in to your existing account. Screenshot Scout automatically creates a default API key when you sign up.
 
-Open the [API Keys page](https://screenshotscout.com/app/api-keys), copy the access key and secret key, and store them securely. The access key is required when creating `ScreenshotScoutClient`. The secret key is used when you enable and configure [signed requests](#signed-requests).
+Open the [API Keys page](https://screenshotscout.com/app/api-keys), copy the access key and secret key, and store them securely. The access key is required when creating `ScreenshotScoutClient`. The secret key is optional and enables [signed requests](#signed-requests).
 
 ## Capture a screenshot
 
@@ -75,7 +75,7 @@ Set `responseType` to `CaptureResponseType.JSON` to receive screenshot metadata 
 
 ## Use GET
 
-POST is the default. To use GET, set `method` to `CaptureHttpMethod.GET`:
+POST is the default. To use GET, pass `CaptureHttpMethod.GET` in the third argument:
 
 ```ts
 import {
@@ -84,15 +84,42 @@ import {
 } from "@screenshotscout/sdk";
 
 const client = new ScreenshotScoutClient({ accessKey: "YOUR_ACCESS_KEY" });
-await client.capture("https://example.com", {
-  method: CaptureHttpMethod.GET,
-  format: "webp",
-});
+await client.capture(
+  "https://example.com",
+  { format: "webp" },
+  { method: CaptureHttpMethod.GET },
+);
 ```
+
+## Build a capture URL
+
+Use `buildCaptureUrl()` when another application or an HTML `<img>` element needs to load the screenshot directly. It builds the URL without making an API request and accepts the same `CaptureOptions` as `capture()`:
+
+```ts
+import {
+  ScreenshotScoutClient,
+  type CaptureOptions,
+} from "@screenshotscout/sdk";
+
+const client = new ScreenshotScoutClient({ accessKey: "YOUR_ACCESS_KEY" });
+const captureOptions = {
+  fullPage: true,
+  blockAds: true,
+} satisfies CaptureOptions;
+
+const captureUrl = client.buildCaptureUrl(
+  "https://example.com",
+  captureOptions,
+);
+
+console.log(captureUrl);
+```
+
+The generated URL contains the access key as a query parameter. When the client has a secret key, the SDK also signs the URL automatically; without a secret key, it builds an unsigned URL. Treat generated URLs as sensitive. Before exposing them to browsers or users, configure a secret key and enable **Require signed requests** for the API key on the [API Keys page](https://screenshotscout.com/app/api-keys).
 
 ## Signed requests
 
-Pass the API key's secret key to sign GET and POST requests automatically. The secret is used locally and is never transmitted:
+Pass the API key's secret key to sign GET and POST requests and generated capture URLs automatically. The secret is used locally and is never transmitted:
 
 ```ts
 const client = new ScreenshotScoutClient({
@@ -122,7 +149,7 @@ The target URL is the required first argument. `CaptureOptions` contains every c
 - Caching: `cache`, `cacheTtl`, `cacheKey`
 - Storage: `storageMode`, `storageEndpoint`, `storageBucket`, `storageRegion`, `storageObjectKey`
 
-Use `method` to select GET and `signal` to cancel a call.
+Pass `CaptureRequestOptions` as the optional third argument to select GET or POST or cancel the request.
 
 Use the exported constants for autocomplete. Raw string values are also accepted:
 
@@ -145,13 +172,18 @@ See the [Screenshot Scout option reference](https://screenshotscout.com/docs/scr
 ## Timeouts and cancellation
 
 ```ts
-await client.capture("https://example.com", {
-  timeout: 180, // service-side capture budget, in seconds
-  signal: AbortSignal.timeout(300_000), // caller-side deadline, in milliseconds
-});
+await client.capture(
+  "https://example.com",
+  {
+    timeout: 180, // service-side capture budget, in seconds
+  },
+  {
+    signal: AbortSignal.timeout(300_000), // caller-side deadline, in milliseconds
+  },
+);
 ```
 
-The service `timeout` option controls how long Screenshot Scout may spend capturing the page. `signal` controls how long your application is willing to wait for the HTTP call. Use `AbortSignal.timeout(...)` for a deadline or an `AbortController` for manual cancellation.
+The service `timeout` option controls how long Screenshot Scout may spend capturing the page. The request `signal` controls how long your application is willing to wait for the HTTP call. Use `AbortSignal.timeout(...)` for a deadline or an `AbortController` for manual cancellation.
 
 ## Advanced: custom Fetch transport
 

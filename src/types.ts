@@ -111,8 +111,8 @@ export type CaptureStorageMode = OpenString<
   (typeof CaptureStorageMode)[keyof typeof CaptureStorageMode]
 >;
 
-/** Screenshot Scout service options. `url`, credentials, and signatures are deliberately absent. */
-export interface CaptureServiceOptions {
+/** Options for configuring the screenshot. */
+export interface CaptureOptions {
   // Target and output
   format?: CaptureFormat | null;
   responseType?: CaptureResponseType | null;
@@ -209,17 +209,13 @@ export interface CaptureServiceOptions {
   storageObjectKey?: string | null;
 }
 
-/** Per-call controls used only by the SDK and never serialized as capture options. */
+/** HTTP controls for one `capture()` call. Not used by `buildCaptureUrl()`. */
 export interface CaptureRequestOptions {
   /** Defaults to POST. */
   method?: CaptureHttpMethod | null;
   /** Cancels this call using normal Fetch/AbortSignal semantics. */
   signal?: AbortSignal | null;
 }
-
-export interface CaptureOptions
-  extends CaptureServiceOptions,
-    CaptureRequestOptions {}
 
 /** Options that request the default binary representation. */
 export type BinaryCaptureOptions = Omit<CaptureOptions, "responseType"> & {

@@ -9,14 +9,16 @@ import {
 } from "./errors.js";
 import {
   buildCanonicalQuery,
+  serializeCaptureOptions,
   serializeCaptureRequest,
 } from "./serialization.js";
-import type { WireJsonValue } from "./serialization.js";
+import type { WireJsonValue, WirePair } from "./serialization.js";
 import { CaptureHttpMethod } from "./types.js";
 import type {
   BinaryCaptureOptions,
   BinaryCaptureResponse,
   CaptureOptions,
+  CaptureRequestOptions,
   CaptureResponse,
   CaptureResult,
   JsonCaptureOptions,
@@ -93,42 +95,32 @@ export class ScreenshotScoutClient {
 
   capture(
     targetUrl: string,
-    options: JsonCaptureOptions,
+    captureOptions: JsonCaptureOptions,
+    captureRequestOptions?: CaptureRequestOptions | null,
   ): Promise<JsonCaptureResponse>;
   capture(
     targetUrl: string,
-    options?: BinaryCaptureOptions | null,
+    captureOptions?: BinaryCaptureOptions | null,
+    captureRequestOptions?: CaptureRequestOptions | null,
   ): Promise<BinaryCaptureResponse>;
   capture(
     targetUrl: string,
-    options: CaptureOptions | null | undefined,
+    captureOptions: CaptureOptions | null | undefined,
+    captureRequestOptions?: CaptureRequestOptions | null,
   ): Promise<CaptureResponse>;
   async capture(
     targetUrl: string,
-    options?: CaptureOptions | null,
+    captureOptions?: CaptureOptions | null,
+    captureRequestOptions?: CaptureRequestOptions | null,
   ): Promise<CaptureResponse> {
-    const serialized = serializeCaptureRequest(targetUrl, options);
-    const expectedResponseKind = getExpectedResponseKind(options);
+    const serialized = serializeCaptureRequest(
+      targetUrl,
+      captureOptions,
+      captureRequestOptions,
+    );
+    const expectedResponseKind = getExpectedResponseKind(captureOptions);
     throwIfAborted(serialized.signal);
-
-    let signature: string | undefined;
-    if (this.#secretKey !== undefined) {
-      try {
-        const canonicalQuery = buildCanonicalQuery(
-          serialized.pairs,
-          this.#accessKey,
-        );
-        signature = createHmac("sha256", this.#secretKey)
-          .update(canonicalQuery, "utf8")
-          .digest("hex");
-      } catch (cause) {
-        throw new ScreenshotScoutSerializationError(
-          "The capture request could not be signed.",
-          undefined,
-          { cause },
-        );
-      }
-    }
+    const signature = this.#createSignature(serialized.pairs);
 
     const requestUrl = new URL(CAPTURE_ENDPOINT);
     const headers = new Headers({
@@ -187,6 +179,42 @@ export class ScreenshotScoutClient {
 
     return decodeSuccessResponse(rawResponse, expectedResponseKind);
   }
+
+  buildCaptureUrl(
+    targetUrl: string,
+    captureOptions?: CaptureOptions | null,
+  ): string {
+    const serialized = serializeCaptureOptions(targetUrl, captureOptions);
+    const signature = this.#createSignature(serialized.pairs);
+    const requestUrl = new URL(CAPTURE_ENDPOINT);
+
+    requestUrl.searchParams.append("access_key", this.#accessKey);
+    for (const [name, value] of serialized.pairs) {
+      requestUrl.searchParams.append(name, value);
+    }
+    if (signature !== undefined) {
+      requestUrl.searchParams.append("signature", signature);
+    }
+
+    return requestUrl.toString();
+  }
+
+  #createSignature(pairs: readonly WirePair[]): string | undefined {
+    if (this.#secretKey === undefined) return undefined;
+
+    try {
+      const canonicalQuery = buildCanonicalQuery(pairs, this.#accessKey);
+      return createHmac("sha256", this.#secretKey)
+        .update(canonicalQuery, "utf8")
+        .digest("hex");
+    } catch (cause) {
+      throw new ScreenshotScoutSerializationError(
+        "The capture request could not be signed.",
+        undefined,
+        { cause },
+      );
+    }
+  }
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -195,9 +223,9 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 }
 
 function getExpectedResponseKind(
-  options: CaptureOptions | null | undefined,
+  captureOptions: CaptureOptions | null | undefined,
 ): "binary" | "json" | undefined {
-  const responseType = options?.responseType;
+  const responseType = captureOptions?.responseType;
   if (
     responseType === undefined ||
     responseType === null ||

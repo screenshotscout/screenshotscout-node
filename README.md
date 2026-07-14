@@ -29,7 +29,7 @@ Open the [API Keys page](https://screenshotscout.com/app/api-keys), copy the acc
 
 ## Capture a screenshot
 
-`capture()` uses Promise-based async I/O and resolves with the final inline Screenshot Scout response. It does not submit a background screenshot job or use webhooks. POST is used by default.
+Create a client and call `capture()` with the URL you want to screenshot:
 
 ```ts
 import { writeFile } from "node:fs/promises";

@@ -1,6 +1,6 @@
 # Screenshot Scout Node.js SDK
 
-The official Node.js SDK for the Screenshot Scout screenshot API.
+The official Node.js SDK for the [Screenshot Scout](https://screenshotscout.com/) screenshot API.
 
 ## Requirements
 
@@ -23,7 +23,7 @@ const { ScreenshotScoutClient } = require("@screenshotscout/sdk");
 
 ## Get your API credentials
 
-Before using the SDK, [sign up for Screenshot Scout](https://screenshotscout.com/) or sign in to your existing account. Screenshot Scout automatically creates a default API key when you sign up.
+Before using the SDK, [sign up for Screenshot Scout](https://screenshotscout.com/auth/signup) or sign in to your existing account. Screenshot Scout automatically creates a default API key when you sign up.
 
 Open the [API Keys page](https://screenshotscout.com/app/api-keys), copy the access key and secret key, and store them securely. The access key is required when creating `ScreenshotScoutClient`. The secret key is optional and enables [signed requests](#signed-requests).
 

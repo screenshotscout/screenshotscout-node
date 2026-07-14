@@ -3,10 +3,7 @@ import {
   ScreenshotScoutSerializationError,
 } from "./errors.js";
 import { CaptureHttpMethod } from "./types.js";
-import type {
-  CaptureOptions,
-  CaptureRequestOptions,
-} from "./types.js";
+import type { CaptureOptions, CaptureRequestOptions } from "./types.js";
 
 type WireScalar = string | number | boolean;
 export type WireJsonValue = WireScalar | WireScalar[];
@@ -129,9 +126,7 @@ export function serializeCaptureRequest(
   const serialized = serializeCaptureOptions(targetUrl, options);
 
   try {
-    const request = serializeCaptureRequestOptionsUnsafe(
-      captureRequestOptions,
-    );
+    const request = serializeCaptureRequestOptionsUnsafe(captureRequestOptions);
     return { ...serialized, ...request };
   } catch (error) {
     if (error instanceof ScreenshotScoutError) throw error;
@@ -176,7 +171,9 @@ function serializeCaptureOptionsUnsafe(
   const pairs: WirePair[] = [["url", targetUrl]];
   const body: Record<string, WireJsonValue> = { url: targetUrl };
 
-  for (const property of Object.keys(WIRE_NAMES) as Array<keyof CaptureOptions>) {
+  for (const property of Object.keys(WIRE_NAMES) as Array<
+    keyof CaptureOptions
+  >) {
     const value = options?.[property];
     if (value === undefined || value === null) continue;
 
@@ -249,16 +246,14 @@ function serializeCaptureRequestOptionsUnsafe(
       : methodValue;
   if (method !== CaptureHttpMethod.GET && method !== CaptureHttpMethod.POST) {
     throw new ScreenshotScoutSerializationError(
-      'The capture method must be CaptureHttpMethod.GET or CaptureHttpMethod.POST.',
+      "The capture method must be CaptureHttpMethod.GET or CaptureHttpMethod.POST.",
       "method",
     );
   }
 
   const signalValue = captureRequestOptions?.signal;
   const signal =
-    signalValue === undefined || signalValue === null
-      ? undefined
-      : signalValue;
+    signalValue === undefined || signalValue === null ? undefined : signalValue;
   if (signal !== undefined && !isAbortSignal(signal)) {
     throw new ScreenshotScoutSerializationError(
       "The capture signal must be an AbortSignal.",

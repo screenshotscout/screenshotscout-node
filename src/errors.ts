@@ -12,11 +12,7 @@ export class ScreenshotScoutConfigurationError extends ScreenshotScoutError {}
 export class ScreenshotScoutSerializationError extends ScreenshotScoutError {
   readonly option: string | undefined;
 
-  constructor(
-    message: string,
-    option?: string,
-    options?: ErrorOptions,
-  ) {
+  constructor(message: string, option?: string, options?: ErrorOptions) {
     super(message, options);
     this.option = option;
   }

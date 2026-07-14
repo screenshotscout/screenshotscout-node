@@ -383,10 +383,7 @@ test("unsafe structures fail locally without calling the transport", async (t) =
         fetch: transport.fetch,
       });
       await assert.rejects(
-        client.capture(
-          targetUrl as string,
-          options as CaptureOptions,
-        ),
+        client.capture(targetUrl as string, options as CaptureOptions),
         ScreenshotScoutSerializationError,
       );
       assert.equal(transport.calls.length, 0);
@@ -537,7 +534,10 @@ test("an explicit JSON response retains documented and additional fields", async
   });
 
   assert.equal(response.kind, "json");
-  assert.equal(response.result.screenshotUrl, "https://cdn.example/screenshot.png");
+  assert.equal(
+    response.result.screenshotUrl,
+    "https://cdn.example/screenshot.png",
+  );
   assert.equal(response.result.cacheStatus, "miss");
   assert.equal(Object.hasOwn(response.result, "screenshotUrlExpiresAt"), false);
   assert.deepEqual(response.result.additionalFields, {
@@ -549,7 +549,9 @@ test("an explicit JSON response retains documented and additional fields", async
 
 test("known response types reject successful responses with the wrong media type", async (t) => {
   await t.test("default binary request receives JSON", async () => {
-    const body = JSON.stringify({ screenshot_url: "https://cdn.example/a.png" });
+    const body = JSON.stringify({
+      screenshot_url: "https://cdn.example/a.png",
+    });
     const transport = recordingFetch(
       () =>
         new Response(body, {
@@ -747,7 +749,10 @@ test("non-JSON and redirect API failures still expose raw responses without retr
       assert.equal(error.status, 302);
       assert.equal(error.errorCode, undefined);
       assert.equal(error.responseBody, undefined);
-      assert.equal(new TextDecoder().decode(error.rawResponse.body), "redirect");
+      assert.equal(
+        new TextDecoder().decode(error.rawResponse.body),
+        "redirect",
+      );
       return true;
     },
   );
@@ -787,11 +792,9 @@ test("caller cancellation follows AbortSignal semantics and is not wrapped", asy
   controller.abort(reason);
 
   await assert.rejects(
-    client.capture(
-      "https://example.com",
-      undefined,
-      { signal: controller.signal },
-    ),
+    client.capture("https://example.com", undefined, {
+      signal: controller.signal,
+    }),
     (error: unknown) => error === reason,
   );
   assert.equal(transport.calls.length, 0);

@@ -78,10 +78,7 @@ Set `responseType` to `CaptureResponseType.JSON` to receive screenshot metadata 
 POST is the default. To use GET, pass `CaptureHttpMethod.GET` in the third argument:
 
 ```ts
-import {
-  CaptureHttpMethod,
-  ScreenshotScoutClient,
-} from "@screenshotscout/sdk";
+import { CaptureHttpMethod, ScreenshotScoutClient } from "@screenshotscout/sdk";
 
 const client = new ScreenshotScoutClient({ accessKey: "YOUR_ACCESS_KEY" });
 await client.capture(
@@ -154,10 +151,7 @@ Pass `CaptureRequestOptions` as the optional third argument to select GET or POS
 Use the exported constants for autocomplete. Raw string values are also accepted:
 
 ```ts
-import {
-  CaptureFormat,
-  CaptureWaitUntil,
-} from "@screenshotscout/sdk";
+import { CaptureFormat, CaptureWaitUntil } from "@screenshotscout/sdk";
 
 await client.capture("https://example.com", {
   format: CaptureFormat.WEBP,

@@ -37,7 +37,11 @@ export class ScreenshotScoutClient {
   readonly #fetch: ScreenshotScoutFetch;
 
   constructor(options: ScreenshotScoutClientOptions) {
-    if (typeof options !== "object" || options === null || Array.isArray(options)) {
+    if (
+      typeof options !== "object" ||
+      options === null ||
+      Array.isArray(options)
+    ) {
       throw new ScreenshotScoutConfigurationError(
         "ScreenshotScoutClient options are required.",
       );
@@ -271,7 +275,8 @@ function createRawResponse(response: Response, body: Uint8Array): RawResponse {
   ).getSetCookie;
   if (typeof getSetCookie === "function") {
     const values = getSetCookie.call(response.headers);
-    if (values.length > 0) headers.set("set-cookie", Object.freeze([...values]));
+    if (values.length > 0)
+      headers.set("set-cookie", Object.freeze([...values]));
   }
 
   return {
@@ -285,7 +290,8 @@ function createRawResponse(response: Response, body: Uint8Array): RawResponse {
 
 function createApiError(rawResponse: RawResponse): ScreenshotScoutApiError {
   const parsed = tryParseJson(rawResponse.body);
-  const objectBody = parsed.ok && isJsonObject(parsed.value) ? parsed.value : null;
+  const objectBody =
+    parsed.ok && isJsonObject(parsed.value) ? parsed.value : null;
   const errorCode =
     objectBody && typeof objectBody.error_code === "string"
       ? objectBody.error_code
@@ -308,30 +314,20 @@ function createApiError(rawResponse: RawResponse): ScreenshotScoutApiError {
   });
 }
 
-function decodeBinaryResponse(
-  rawResponse: RawResponse,
-): BinaryCaptureResponse {
+function decodeBinaryResponse(rawResponse: RawResponse): BinaryCaptureResponse {
   const headers = rawResponse.headers;
-  const screenshotUrl = firstHeader(
-    headers,
-    "screenshot-scout-screenshot-url",
-  );
+  const screenshotUrl = firstHeader(headers, "screenshot-scout-screenshot-url");
   const screenshotUrlExpiresAt = firstHeader(
     headers,
     "screenshot-scout-screenshot-url-expires-at",
   );
-  const cacheStatus = firstHeader(
-    headers,
-    "screenshot-scout-cache-status",
-  );
+  const cacheStatus = firstHeader(headers, "screenshot-scout-cache-status");
 
   return {
     kind: "binary",
     bytes: rawResponse.body,
     ...(screenshotUrl === undefined ? {} : { screenshotUrl }),
-    ...(screenshotUrlExpiresAt === undefined
-      ? {}
-      : { screenshotUrlExpiresAt }),
+    ...(screenshotUrlExpiresAt === undefined ? {} : { screenshotUrlExpiresAt }),
     ...(cacheStatus === undefined ? {} : { cacheStatus }),
     rawResponse,
   };
@@ -355,7 +351,11 @@ function decodeJsonResponse(rawResponse: RawResponse): JsonCaptureResponse {
   }
 
   const value = parsed.value;
-  const screenshotUrl = readOptionalString(value, "screenshot_url", rawResponse);
+  const screenshotUrl = readOptionalString(
+    value,
+    "screenshot_url",
+    rawResponse,
+  );
   const screenshotUrlExpiresAt = readOptionalString(
     value,
     "screenshot_url_expires_at",
@@ -373,9 +373,7 @@ function decodeJsonResponse(rawResponse: RawResponse): JsonCaptureResponse {
 
   const result: CaptureResult = {
     ...(screenshotUrl === undefined ? {} : { screenshotUrl }),
-    ...(screenshotUrlExpiresAt === undefined
-      ? {}
-      : { screenshotUrlExpiresAt }),
+    ...(screenshotUrlExpiresAt === undefined ? {} : { screenshotUrlExpiresAt }),
     ...(cacheStatus === undefined ? {} : { cacheStatus }),
     additionalFields,
   };
@@ -410,16 +408,18 @@ function firstHeader(
 function isJsonMediaType(contentType: string | null): boolean {
   if (contentType === null) return false;
   const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
-  return mediaType === "application/json" || Boolean(mediaType?.endsWith("+json"));
+  return (
+    mediaType === "application/json" || Boolean(mediaType?.endsWith("+json"))
+  );
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function tryParseJson(body: Uint8Array):
-  | { ok: true; value: unknown }
-  | { ok: false; cause: unknown } {
+function tryParseJson(
+  body: Uint8Array,
+): { ok: true; value: unknown } | { ok: false; cause: unknown } {
   try {
     return { ok: true, value: JSON.parse(new TextDecoder().decode(body)) };
   } catch (cause) {

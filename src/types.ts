@@ -92,7 +92,8 @@ export type CaptureImageAnchor = OpenString<
 export const CapturePdfPaperFormat = {
   A3: "a3",
   A4: "a4",
-  CONTENT: "content",
+  A5: "a5",
+  A6: "a6",
   LEGAL: "legal",
   LETTER: "letter",
   TABLOID: "tabloid",
@@ -195,6 +196,7 @@ export interface CaptureOptions {
   pdfMarginBottom?: string | null;
   pdfMarginLeft?: string | null;
   pdfScale?: number | null;
+  pdfPageRanges?: string | null;
 
   // Caching
   cache?: boolean | null;

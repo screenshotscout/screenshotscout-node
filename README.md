@@ -142,7 +142,7 @@ The target URL is the required first argument. `CaptureOptions` contains every c
 - DOM changes: `hideSelectors`, `clickSelectors`, `clickAllSelectors`, `injectCss`, `injectJs`, `bypassCsp`
 - Framing: `selector`, `clipX`, `clipY`, `clipWidth`, `clipHeight`
 - Image output: `imageWidth`, `imageHeight`, `imageMode`, `imageAnchor`, `imageAllowUpscale`, `imageBackground`, `imageQuality`
-- PDF: `pdfPaperFormat`, `pdfLandscape`, `pdfPrintBackground`, `pdfMargin`, `pdfMarginTop`, `pdfMarginRight`, `pdfMarginBottom`, `pdfMarginLeft`, `pdfScale`
+- PDF: `pdfPaperFormat`, `pdfLandscape`, `pdfPrintBackground`, `pdfMargin`, `pdfMarginTop`, `pdfMarginRight`, `pdfMarginBottom`, `pdfMarginLeft`, `pdfScale`, `pdfPageRanges`
 - Caching: `cache`, `cacheTtl`, `cacheKey`
 - Storage: `storageMode`, `storageEndpoint`, `storageBucket`, `storageRegion`, `storageObjectKey`
 

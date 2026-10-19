@@ -79,6 +79,7 @@ const WIRE_NAMES = {
   pdfMarginBottom: "pdf_margin_bottom",
   pdfMarginLeft: "pdf_margin_left",
   pdfScale: "pdf_scale",
+  pdfPageRanges: "pdf_page_ranges",
   cache: "cache",
   cacheTtl: "cache_ttl",
   cacheKey: "cache_key",

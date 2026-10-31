@@ -9,10 +9,11 @@ import {
 } from "./errors.js";
 import {
   buildCanonicalQuery,
+  encodeQueryPairs,
   serializeCaptureOptions,
   serializeCaptureRequest,
 } from "./serialization.js";
-import type { WireJsonValue, WirePair } from "./serialization.js";
+import type { WirePair } from "./serialization.js";
 import { CaptureHttpMethod } from "./types.js";
 import type {
   BinaryCaptureOptions,
@@ -122,6 +123,14 @@ export class ScreenshotScoutClient {
       captureOptions,
       captureRequestOptions,
     );
+    if (
+      this.#secretKey !== undefined &&
+      serialized.method === CaptureHttpMethod.POST
+    ) {
+      throw new ScreenshotScoutConfigurationError(
+        "POST requests can't be signed. This client has a secret key: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.",
+      );
+    }
     const expectedResponseKind = getExpectedResponseKind(captureOptions);
     throwIfAborted(serialized.signal);
     const signature = this.#createSignature(serialized.pairs);
@@ -137,18 +146,13 @@ export class ScreenshotScoutClient {
     };
 
     if (serialized.method === CaptureHttpMethod.GET) {
-      const searchParams = new URLSearchParams();
-      for (const [name, value] of serialized.pairs) {
-        searchParams.append(name, value);
-      }
-      if (signature !== undefined) searchParams.append("signature", signature);
-      requestUrl.search = searchParams.toString();
+      const pairs: WirePair[] = [...serialized.pairs];
+      if (signature !== undefined) pairs.push(["signature", signature]);
+      requestUrl.search = encodeQueryPairs(pairs);
     } else {
       headers.set("Content-Type", "application/json");
-      const body: Record<string, WireJsonValue> = { ...serialized.body };
-      if (signature !== undefined) body.signature = signature;
       try {
-        requestInit.body = JSON.stringify(body);
+        requestInit.body = JSON.stringify(serialized.body);
       } catch (cause) {
         throw new ScreenshotScoutSerializationError(
           "The POST capture body could not be serialized as JSON.",
@@ -192,13 +196,14 @@ export class ScreenshotScoutClient {
     const signature = this.#createSignature(serialized.pairs);
     const requestUrl = new URL(CAPTURE_ENDPOINT);
 
-    requestUrl.searchParams.append("access_key", this.#accessKey);
-    for (const [name, value] of serialized.pairs) {
-      requestUrl.searchParams.append(name, value);
-    }
+    const pairs: WirePair[] = [
+      ["access_key", this.#accessKey],
+      ...serialized.pairs,
+    ];
     if (signature !== undefined) {
-      requestUrl.searchParams.append("signature", signature);
+      pairs.push(["signature", signature]);
     }
+    requestUrl.search = encodeQueryPairs(pairs);
 
     return requestUrl.toString();
   }

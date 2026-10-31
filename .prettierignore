@@ -1,0 +1,2 @@
+# Copied unchanged from the API gateway; every SDK keeps a byte-identical copy.
+test/fixtures/signing-vectors.json

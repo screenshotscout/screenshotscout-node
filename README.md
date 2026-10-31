@@ -116,13 +116,21 @@ The generated URL contains the access key as a query parameter. When the client 
 
 ## Signed requests
 
-Pass the API key's secret key to sign GET and POST requests and generated capture URLs automatically. The secret is used locally and is never transmitted:
+Pass the API key's secret key to sign generated capture URLs and GET requests automatically. The secret is used locally and is never transmitted. POST requests can't be signed, so capture with `CaptureHttpMethod.GET`:
 
 ```ts
+import { CaptureHttpMethod, ScreenshotScoutClient } from "@screenshotscout/sdk";
+
 const client = new ScreenshotScoutClient({
   accessKey: "YOUR_ACCESS_KEY",
   secretKey: "YOUR_SECRET_KEY",
 });
+
+await client.capture(
+  "https://example.com",
+  { fullPage: true },
+  { method: CaptureHttpMethod.GET },
+);
 ```
 
 See the [signed requests guide](https://screenshotscout.com/docs/signed-requests) for details.

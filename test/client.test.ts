@@ -324,7 +324,7 @@ test("GET uses repeated query parameters in caller order and never sends credent
   ]);
   assert.equal(
     url.search.slice(1),
-    "url=https%3A%2F%2Fexample.com%2Fa+path&cookies=a%3D1&cookies=a%3D1&headers=X-Test%3Aone&headers=X-Test%3Aone&delay=0&full_page=false&cache_key=",
+    "url=https%3A%2F%2Fexample.com%2Fa%20path&cookies=a%3D1&cookies=a%3D1&headers=X-Test%3Aone&headers=X-Test%3Aone&delay=0&full_page=false&cache_key=",
   );
 });
 
@@ -358,7 +358,7 @@ test("buildCaptureUrl creates an unsigned GET URL without calling the transport"
   ]);
   assert.equal(
     url.search.slice(1),
-    "access_key=query-key&url=https%3A%2F%2Fexample.com%2Fa+path&cookies=a%3D1&cookies=a%3D1&headers=X-Test%3Aone&headers=X-Test%3Aone&delay=0&full_page=false&cache_key=",
+    "access_key=query-key&url=https%3A%2F%2Fexample.com%2Fa%20path&cookies=a%3D1&cookies=a%3D1&headers=X-Test%3Aone&headers=X-Test%3Aone&delay=0&full_page=false&cache_key=",
   );
 });
 
@@ -419,7 +419,7 @@ test("unsafe structures fail locally without calling the transport", async (t) =
   }
 });
 
-test("GET, POST, and generated URL signing match the API algorithm", async () => {
+test("GET and generated URL signing match the API algorithm", async () => {
   const transport = recordingFetch(
     () =>
       new Response("{}", {
@@ -440,34 +440,76 @@ test("GET, POST, and generated URL signing match the API algorithm", async () =>
     headers: ["X-Test:one", "X-Test:two"],
   } satisfies CaptureOptions;
   const expectedSignature =
-    "0c4928ba691575903f27b911b8ea1a536604ca070d60d886e10c127c05e236fc";
+    "6419f2ac8c0440f1e341b547630606c9dc74dacfbb2df8e122fc9ae26831d893";
 
   await client.capture(targetUrl, sharedOptions, {
     method: CaptureHttpMethod.GET,
   });
-  await client.capture(targetUrl, sharedOptions, {
-    method: CaptureHttpMethod.POST,
-  });
   const builtUrl = new URL(client.buildCaptureUrl(targetUrl, sharedOptions));
 
   const getUrl = callUrl(transport.calls[0]!);
-  const postBody = callJsonBody(transport.calls[1]!);
-  assert.equal(transport.calls.length, 2);
+  assert.equal(transport.calls.length, 1);
   assert.equal(getUrl.searchParams.get("signature"), expectedSignature);
-  assert.equal(postBody.signature, expectedSignature);
   assert.equal(builtUrl.searchParams.get("signature"), expectedSignature);
   assert.equal(builtUrl.searchParams.get("access_key"), "ak_test");
   assert.equal(builtUrl.toString().includes("sk_test"), false);
   assert.equal(getUrl.searchParams.has("access_key"), false);
-  assert.equal(Object.hasOwn(postBody, "access_key"), false);
-  assert.deepEqual(postBody.headers, ["X-Test:one", "X-Test:two"]);
   assert.equal(
     callHeaders(transport.calls[0]!).get("authorization"),
     "Bearer ak_test",
   );
+});
+
+test("a client with a secret key refuses POST without calling the transport", async (t) => {
+  const cases: Array<[string, CaptureRequestOptions | undefined]> = [
+    ["default method", undefined],
+    ["explicit POST", { method: CaptureHttpMethod.POST }],
+  ];
+
+  for (const [name, captureRequestOptions] of cases) {
+    await t.test(name, async () => {
+      const transport = recordingFetch();
+      const client = new ScreenshotScoutClient({
+        accessKey: "ak_test",
+        secretKey: "sk_test",
+        fetch: transport.fetch,
+      });
+
+      await assert.rejects(
+        client.capture("https://example.com", {}, captureRequestOptions),
+        (error: unknown) => {
+          assert.equal(
+            error instanceof ScreenshotScoutConfigurationError,
+            true,
+          );
+          if (!(error instanceof ScreenshotScoutConfigurationError)) {
+            return false;
+          }
+          assert.equal(
+            error.message,
+            "POST requests can't be signed. This client has a secret key: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.",
+          );
+          return true;
+        },
+      );
+      assert.equal(transport.calls.length, 0);
+    });
+  }
+});
+
+test("lone surrogates are sent and signed as U+FFFD", () => {
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    secretKey: "sk_test",
+    fetch: recordingFetch().fetch,
+  });
+
+  const url = client.buildCaptureUrl("https://example.com/\uD800");
+
+  assert.equal(url, client.buildCaptureUrl("https://example.com/\uFFFD"));
   assert.equal(
-    callHeaders(transport.calls[1]!).get("authorization"),
-    "Bearer ak_test",
+    new URL(url).searchParams.get("url"),
+    "https://example.com/\uFFFD",
   );
 });
 

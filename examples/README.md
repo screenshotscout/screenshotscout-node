@@ -15,4 +15,4 @@ npm exec tsx -- examples/json.ts
 npm exec tsx -- examples/capture-url.ts
 ```
 
-Set `SCREENSHOTSCOUT_SECRET_KEY` as well when signed requests are enabled for the API key.
+`capture-url.ts` also reads `SCREENSHOTSCOUT_SECRET_KEY` and signs the URL when it's set.

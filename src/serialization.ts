@@ -280,9 +280,24 @@ export function buildCanonicalQuery(
         : 1,
   );
 
-  const canonical = new URLSearchParams();
-  for (const { name, value } of entries) canonical.append(name, value);
-  return canonical.toString();
+  return encodeQueryPairs(entries.map(({ name, value }) => [name, value]));
+}
+
+/** The signed text and every query the SDK writes use this encoding, so they match exactly. */
+export function encodeQueryPairs(pairs: readonly WirePair[]): string {
+  return pairs
+    .map(([name, value]) => `${encodeRfc3986(name)}=${encodeRfc3986(value)}`)
+    .join("&");
+}
+
+// RFC 3986: only A-Z a-z 0-9 - . _ ~ stay as they are; everything else is
+// percent-encoded UTF-8 with uppercase hex, so a space becomes %20.
+// toWellFormed() turns lone surrogates into U+FFFD, as URLSearchParams does.
+function encodeRfc3986(text: string): string {
+  return encodeURIComponent(text.toWellFormed()).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function isWireScalar(value: unknown): value is WireScalar {

@@ -6,12 +6,7 @@ import {
 const accessKey = process.env.SCREENSHOTSCOUT_ACCESS_KEY;
 if (!accessKey) throw new Error("Set SCREENSHOTSCOUT_ACCESS_KEY first.");
 
-const secretKey = process.env.SCREENSHOTSCOUT_SECRET_KEY;
-const client = new ScreenshotScoutClient({
-  accessKey,
-  ...(secretKey ? { secretKey } : {}),
-});
-
+const client = new ScreenshotScoutClient({ accessKey });
 const response = await client.capture("https://example.com", {
   responseType: CaptureResponseType.JSON,
   cache: true,

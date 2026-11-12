@@ -23,9 +23,39 @@ import type {
   ScreenshotScoutFetch,
 } from "../src/index.js";
 
+// Keys set in the developer's own environment must not reach these tests.
+delete process.env.SCREENSHOTSCOUT_ACCESS_KEY;
+delete process.env.SCREENSHOTSCOUT_SECRET_KEY;
+
 interface RecordedCall {
   readonly input: string | URL | Request;
   readonly init: RequestInit | undefined;
+}
+
+async function withEnvironment(
+  values: Readonly<Record<string, string>>,
+  run: () => Promise<void> | void,
+): Promise<void> {
+  const previous = new Map<string, string | undefined>();
+  for (const [name, value] of Object.entries(values)) {
+    previous.set(name, process.env[name]);
+    process.env[name] = value;
+  }
+  try {
+    await run();
+  } finally {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
+function jsonResponse(): Response {
+  return new Response("{}", {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 function recordingFetch(
@@ -61,7 +91,7 @@ function callJsonBody(call: RecordedCall): Record<string, unknown> {
 
 test("configuration validates credentials and the advanced fetch override", () => {
   assert.throws(
-    () => new ScreenshotScoutClient(undefined as never),
+    () => new ScreenshotScoutClient("options" as never),
     ScreenshotScoutConfigurationError,
   );
   assert.throws(
@@ -460,41 +490,167 @@ test("GET and generated URL signing match the API algorithm", async () => {
   );
 });
 
-test("a client with a secret key refuses POST without calling the transport", async (t) => {
-  const cases: Array<[string, CaptureRequestOptions | undefined]> = [
-    ["default method", undefined],
-    ["explicit POST", { method: CaptureHttpMethod.POST }],
-  ];
+test("a client with a secret key refuses an explicit POST without calling the transport", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    secretKey: "sk_test",
+    fetch: transport.fetch,
+  });
 
-  for (const [name, captureRequestOptions] of cases) {
-    await t.test(name, async () => {
+  await assert.rejects(
+    client.capture(
+      "https://example.com",
+      {},
+      { method: CaptureHttpMethod.POST },
+    ),
+    {
+      name: "ScreenshotScoutConfigurationError",
+      message:
+        "POST requests can't be signed. This client has a secret key: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.",
+    },
+  );
+  assert.equal(transport.calls.length, 0);
+});
+
+test("a client with a secret key sends a signed GET when no method is chosen", async () => {
+  const transport = recordingFetch(jsonResponse);
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    secretKey: "sk_test",
+    fetch: transport.fetch,
+  });
+
+  await client.capture("https://example.com/a b?x=1&y=2", {
+    responseType: "json",
+    fullPage: false,
+    delay: 0,
+    headers: ["X-Test:one", "X-Test:two"],
+  });
+
+  const call = transport.calls[0]!;
+  assert.equal(transport.calls.length, 1);
+  assert.equal(call.init?.method, CaptureHttpMethod.GET);
+  assert.equal(call.init?.body, undefined);
+  assert.equal(
+    callUrl(call).searchParams.get("signature"),
+    "6419f2ac8c0440f1e341b547630606c9dc74dacfbb2df8e122fc9ae26831d893",
+  );
+});
+
+test("a client without a secret key still sends POST when no method is chosen", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    fetch: transport.fetch,
+  });
+
+  await client.capture("https://example.com");
+
+  assert.equal(transport.calls[0]!.init?.method, CaptureHttpMethod.POST);
+});
+
+test("without keys in the options, the client reads both environment variables once", async () => {
+  await withEnvironment(
+    {
+      SCREENSHOTSCOUT_ACCESS_KEY: "ak_test",
+      SCREENSHOTSCOUT_SECRET_KEY: "sk_test",
+    },
+    async () => {
+      const transport = recordingFetch(jsonResponse);
+      const client = new ScreenshotScoutClient({ fetch: transport.fetch });
+      process.env.SCREENSHOTSCOUT_ACCESS_KEY = "changed";
+      process.env.SCREENSHOTSCOUT_SECRET_KEY = "changed";
+
+      await client.capture("https://example.com/a b?x=1&y=2", {
+        responseType: "json",
+        fullPage: false,
+        delay: 0,
+        headers: ["X-Test:one", "X-Test:two"],
+      });
+
+      const call = transport.calls[0]!;
+      assert.equal(call.init?.method, CaptureHttpMethod.GET);
+      assert.equal(callHeaders(call).get("authorization"), "Bearer ak_test");
+      assert.equal(
+        callUrl(call).searchParams.get("signature"),
+        "6419f2ac8c0440f1e341b547630606c9dc74dacfbb2df8e122fc9ae26831d893",
+      );
+    },
+  );
+});
+
+test("a client with no options at all reads the environment", async () => {
+  await withEnvironment({ SCREENSHOTSCOUT_ACCESS_KEY: "ak_env" }, () => {
+    const url = new URL(
+      new ScreenshotScoutClient().buildCaptureUrl("https://example.com"),
+    );
+
+    assert.equal(url.searchParams.get("access_key"), "ak_env");
+    assert.equal(url.searchParams.has("signature"), false);
+  });
+});
+
+test("passing either key means the environment is never read", async () => {
+  await withEnvironment(
+    {
+      SCREENSHOTSCOUT_ACCESS_KEY: "ak_env",
+      SCREENSHOTSCOUT_SECRET_KEY: "sk_env",
+    },
+    async () => {
       const transport = recordingFetch();
       const client = new ScreenshotScoutClient({
-        accessKey: "ak_test",
-        secretKey: "sk_test",
+        accessKey: "ak_code",
         fetch: transport.fetch,
       });
 
+      await client.capture("https://example.com");
+
+      const call = transport.calls[0]!;
+      assert.equal(call.init?.method, CaptureHttpMethod.POST);
+      assert.equal(callHeaders(call).get("authorization"), "Bearer ak_code");
+
+      assert.throws(() => new ScreenshotScoutClient({ secretKey: "sk_code" }), {
+        name: "ScreenshotScoutConfigurationError",
+        message: "A non-blank Screenshot Scout access key is required.",
+      });
+    },
+  );
+});
+
+test("a missing access key names the environment variable", () => {
+  assert.throws(() => new ScreenshotScoutClient(), {
+    name: "ScreenshotScoutConfigurationError",
+    message:
+      "A non-blank Screenshot Scout access key is required. Pass one, or set SCREENSHOTSCOUT_ACCESS_KEY.",
+  });
+});
+
+test("an explicit POST names the variable a secret key came from", async () => {
+  await withEnvironment(
+    {
+      SCREENSHOTSCOUT_ACCESS_KEY: "ak_env",
+      SCREENSHOTSCOUT_SECRET_KEY: "sk_env",
+    },
+    async () => {
+      const transport = recordingFetch();
+      const client = new ScreenshotScoutClient({ fetch: transport.fetch });
+
       await assert.rejects(
-        client.capture("https://example.com", {}, captureRequestOptions),
-        (error: unknown) => {
-          assert.equal(
-            error instanceof ScreenshotScoutConfigurationError,
-            true,
-          );
-          if (!(error instanceof ScreenshotScoutConfigurationError)) {
-            return false;
-          }
-          assert.equal(
-            error.message,
-            "POST requests can't be signed. This client has a secret key: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.",
-          );
-          return true;
+        client.capture(
+          "https://example.com",
+          {},
+          { method: CaptureHttpMethod.POST },
+        ),
+        {
+          name: "ScreenshotScoutConfigurationError",
+          message:
+            "POST requests can't be signed. This client has a secret key from SCREENSHOTSCOUT_SECRET_KEY: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.",
         },
       );
       assert.equal(transport.calls.length, 0);
-    });
-  }
+    },
+  );
 });
 
 test("lone surrogates are sent and signed as U+FFFD", () => {

@@ -25,7 +25,9 @@ const { ScreenshotScoutClient } = require("@screenshotscout/sdk");
 
 Before using the SDK, [sign up for Screenshot Scout](https://screenshotscout.com/auth/signup) or sign in to your existing account. Screenshot Scout automatically creates a default API key when you sign up.
 
-Open the [API Keys page](https://screenshotscout.com/app/api-keys), copy the access key and secret key, and store them securely. The access key is required when creating `ScreenshotScoutClient`. The secret key is optional and enables [signed requests](#signed-requests).
+Open the [API Keys page](https://screenshotscout.com/app/api-keys) and copy the access key. You only need the secret key for [signed requests](#signed-requests).
+
+Set the access key as the `SCREENSHOTSCOUT_ACCESS_KEY` environment variable, or [pass it in code](#pass-the-keys-yourself).
 
 ## Capture a screenshot
 
@@ -35,12 +37,7 @@ Create a client and call `capture()` with the URL you want to screenshot:
 import { writeFile } from "node:fs/promises";
 import { ScreenshotScoutClient } from "@screenshotscout/sdk";
 
-const accessKey = process.env.SCREENSHOTSCOUT_ACCESS_KEY;
-if (!accessKey) throw new Error("Set SCREENSHOTSCOUT_ACCESS_KEY first.");
-
-const client = new ScreenshotScoutClient({
-  accessKey,
-});
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY
 
 const response = await client.capture("https://example.com", {
   fullPage: true,
@@ -60,7 +57,7 @@ import {
   ScreenshotScoutClient,
 } from "@screenshotscout/sdk";
 
-const client = new ScreenshotScoutClient({ accessKey: "YOUR_ACCESS_KEY" });
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY
 const response = await client.capture("https://example.com", {
   responseType: CaptureResponseType.JSON,
   cache: true,
@@ -75,12 +72,12 @@ Set `responseType` to `CaptureResponseType.JSON` to receive screenshot metadata 
 
 ## Use GET
 
-POST is the default. To use GET, pass `CaptureHttpMethod.GET` in the third argument:
+POST is the default, or GET when the client has a secret key. To use GET, pass `CaptureHttpMethod.GET` in the third argument:
 
 ```ts
 import { CaptureHttpMethod, ScreenshotScoutClient } from "@screenshotscout/sdk";
 
-const client = new ScreenshotScoutClient({ accessKey: "YOUR_ACCESS_KEY" });
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY
 await client.capture(
   "https://example.com",
   { format: "webp" },
@@ -98,7 +95,7 @@ import {
   type CaptureOptions,
 } from "@screenshotscout/sdk";
 
-const client = new ScreenshotScoutClient({ accessKey: "YOUR_ACCESS_KEY" });
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY
 const captureOptions = {
   fullPage: true,
   blockAds: true,
@@ -116,24 +113,32 @@ The generated URL contains the access key as a query parameter. When the client 
 
 ## Signed requests
 
-Pass the API key's secret key to sign generated capture URLs and GET requests automatically. The secret is used locally and is never transmitted. POST requests can't be signed, so capture with `CaptureHttpMethod.GET`:
+Set the API key's secret key as the `SCREENSHOTSCOUT_SECRET_KEY` environment variable. The client then signs its capture requests and the capture URLs it builds, with no change to your code:
 
 ```ts
-import { CaptureHttpMethod, ScreenshotScoutClient } from "@screenshotscout/sdk";
+import { ScreenshotScoutClient } from "@screenshotscout/sdk";
 
-const client = new ScreenshotScoutClient({
-  accessKey: "YOUR_ACCESS_KEY",
-  secretKey: "YOUR_SECRET_KEY",
-});
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY and SCREENSHOTSCOUT_SECRET_KEY
 
-await client.capture(
-  "https://example.com",
-  { fullPage: true },
-  { method: CaptureHttpMethod.GET },
-);
+await client.capture("https://example.com", { fullPage: true });
 ```
 
-See the [signed requests guide](https://screenshotscout.com/docs/signed-requests) for details.
+The secret key is used locally and is never transmitted. See the [signed requests guide](https://screenshotscout.com/docs/signed-requests) for details.
+
+## Pass the keys yourself
+
+To use keys from somewhere other than the environment, such as a secrets manager or per-customer settings, pass them to the client:
+
+```ts
+import { ScreenshotScoutClient } from "@screenshotscout/sdk";
+
+const client = new ScreenshotScoutClient({
+  accessKey: config.accessKey,
+  secretKey: config.secretKey, // optional
+});
+```
+
+If you pass either key, the client reads neither environment variable. If you pass no key, for example because the variable holding it is `undefined`, the client reads both environment variables instead.
 
 ## Capture options
 
@@ -203,10 +208,7 @@ const fetchWithStatusLogging: ScreenshotScoutFetch = async (input, init) => {
   return response;
 };
 
-const client = new ScreenshotScoutClient({
-  accessKey: "YOUR_ACCESS_KEY",
-  fetch: fetchWithStatusLogging,
-});
+const client = new ScreenshotScoutClient({ fetch: fetchWithStatusLogging }); // Reads SCREENSHOTSCOUT_ACCESS_KEY
 ```
 
 ## Raw responses and errors

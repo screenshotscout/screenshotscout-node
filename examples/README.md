@@ -15,4 +15,4 @@ npm exec tsx -- examples/json.ts
 npm exec tsx -- examples/capture-url.ts
 ```
 
-`capture-url.ts` also reads `SCREENSHOTSCOUT_SECRET_KEY` and signs the URL when it's set.
+If `SCREENSHOTSCOUT_SECRET_KEY` is also set, the client signs its requests and the URL that `capture-url.ts` prints.

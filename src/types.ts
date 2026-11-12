@@ -213,7 +213,7 @@ export interface CaptureOptions {
 
 /** HTTP controls for one `capture()` call. Not used by `buildCaptureUrl()`. */
 export interface CaptureRequestOptions {
-  /** Defaults to POST. A client with a secret key must pass GET, because POST requests can't be signed. */
+  /** Defaults to POST, or GET when the client has a secret key, because POST requests can't be signed. */
   method?: CaptureHttpMethod | null;
   /** Cancels this call using normal Fetch/AbortSignal semantics. */
   signal?: AbortSignal | null;
@@ -235,8 +235,15 @@ export type ScreenshotScoutFetch = (
 ) => Promise<Response>;
 
 export interface ScreenshotScoutClientOptions {
-  accessKey: string;
-  /** Signs GET requests and capture URLs. POST requests can't be signed, so a client with a secret key refuses them. */
+  /**
+   * Defaults to `SCREENSHOTSCOUT_ACCESS_KEY`. When you pass either key, neither environment
+   * variable is read.
+   */
+  accessKey?: string | null;
+  /**
+   * Signs capture requests and capture URLs. Defaults to `SCREENSHOTSCOUT_SECRET_KEY` when no key
+   * is passed. A client with a secret key sends captures as GET, because POST requests can't be signed.
+   */
   secretKey?: string | null;
   /** Advanced: Fetch-compatible transport. Defaults to the platform Fetch implementation. */
   fetch?: ScreenshotScoutFetch | null;

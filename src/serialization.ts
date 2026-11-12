@@ -15,7 +15,8 @@ export interface SerializedCaptureOptions {
 }
 
 export interface SerializedCaptureRequest extends SerializedCaptureOptions {
-  readonly method: CaptureHttpMethod;
+  /** `undefined` when the caller didn't choose a method; the client then picks one. */
+  readonly method: CaptureHttpMethod | undefined;
   readonly signal: AbortSignal | undefined;
 }
 
@@ -242,10 +243,12 @@ function serializeCaptureRequestOptionsUnsafe(
 
   const methodValue = captureRequestOptions?.method;
   const method =
-    methodValue === undefined || methodValue === null
-      ? CaptureHttpMethod.POST
-      : methodValue;
-  if (method !== CaptureHttpMethod.GET && method !== CaptureHttpMethod.POST) {
+    methodValue === undefined || methodValue === null ? undefined : methodValue;
+  if (
+    method !== undefined &&
+    method !== CaptureHttpMethod.GET &&
+    method !== CaptureHttpMethod.POST
+  ) {
     throw new ScreenshotScoutSerializationError(
       "The capture method must be CaptureHttpMethod.GET or CaptureHttpMethod.POST.",
       "method",

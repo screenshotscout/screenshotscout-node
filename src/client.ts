@@ -1,6 +1,11 @@
 import { createHmac } from "node:crypto";
 
 import {
+  readProcessEnvironment,
+  resolveCredentials,
+  SECRET_KEY_VARIABLE,
+} from "./credentials.js";
+import {
   ScreenshotScoutApiError,
   ScreenshotScoutConfigurationError,
   ScreenshotScoutResponseDecodingError,
@@ -35,34 +40,43 @@ const ACCESS_KEY_PATTERN = /^[A-Za-z0-9\-._~+/]+=*$/;
 export class ScreenshotScoutClient {
   readonly #accessKey: string;
   readonly #secretKey: string | undefined;
+  readonly #secretKeyFromEnvironment: boolean;
   readonly #fetch: ScreenshotScoutFetch;
 
-  constructor(options: ScreenshotScoutClientOptions) {
+  /**
+   * Creates a client. When `options` passes no key, the client reads `SCREENSHOTSCOUT_ACCESS_KEY`
+   * and, if it's set, `SCREENSHOTSCOUT_SECRET_KEY`. Passing either key means neither variable is read.
+   */
+  constructor(options?: ScreenshotScoutClientOptions | null) {
     if (
-      typeof options !== "object" ||
-      options === null ||
-      Array.isArray(options)
+      options !== undefined &&
+      options !== null &&
+      (typeof options !== "object" || Array.isArray(options))
     ) {
       throw new ScreenshotScoutConfigurationError(
-        "ScreenshotScoutClient options are required.",
+        "ScreenshotScoutClient options must be an object when provided.",
       );
     }
+    const clientOptions: ScreenshotScoutClientOptions = options ?? {};
+    const credentials = resolveCredentials(
+      clientOptions.accessKey,
+      clientOptions.secretKey,
+      readProcessEnvironment,
+    );
 
-    if (
-      typeof options.accessKey !== "string" ||
-      options.accessKey.trim().length === 0
-    ) {
+    const accessKey = credentials.accessKey;
+    if (typeof accessKey !== "string" || accessKey.trim().length === 0) {
       throw new ScreenshotScoutConfigurationError(
         "A non-blank Screenshot Scout access key is required.",
       );
     }
-    if (!ACCESS_KEY_PATTERN.test(options.accessKey)) {
+    if (!ACCESS_KEY_PATTERN.test(accessKey)) {
       throw new ScreenshotScoutConfigurationError(
         "The Screenshot Scout access key is not a valid Bearer credential.",
       );
     }
 
-    const secretKey = options.secretKey ?? undefined;
+    const secretKey = credentials.secretKey;
     if (
       secretKey !== undefined &&
       (typeof secretKey !== "string" || secretKey.trim().length === 0)
@@ -72,7 +86,7 @@ export class ScreenshotScoutClient {
       );
     }
 
-    const fetchOption = options.fetch ?? undefined;
+    const fetchOption = clientOptions.fetch ?? undefined;
     const fetchImplementation = fetchOption ?? globalThis.fetch;
     if (typeof fetchImplementation !== "function") {
       throw new ScreenshotScoutConfigurationError(
@@ -82,7 +96,7 @@ export class ScreenshotScoutClient {
 
     // Validate that the configured credential can be represented as an HTTP header.
     try {
-      new Headers({ Authorization: `Bearer ${options.accessKey}` });
+      new Headers({ Authorization: `Bearer ${accessKey}` });
     } catch (cause) {
       throw new ScreenshotScoutConfigurationError(
         "The Screenshot Scout access key cannot be used in an Authorization header.",
@@ -90,8 +104,10 @@ export class ScreenshotScoutClient {
       );
     }
 
-    this.#accessKey = options.accessKey;
+    this.#accessKey = accessKey;
     this.#secretKey = secretKey;
+    this.#secretKeyFromEnvironment =
+      credentials.fromEnvironment && secretKey !== undefined;
     this.#fetch =
       fetchOption === undefined
         ? globalThis.fetch.bind(globalThis)
@@ -127,10 +143,19 @@ export class ScreenshotScoutClient {
       this.#secretKey !== undefined &&
       serialized.method === CaptureHttpMethod.POST
     ) {
+      const source = this.#secretKeyFromEnvironment
+        ? ` from ${SECRET_KEY_VARIABLE}`
+        : "";
       throw new ScreenshotScoutConfigurationError(
-        "POST requests can't be signed. This client has a secret key: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.",
+        `POST requests can't be signed. This client has a secret key${source}: send this capture with method GET, or use a client without a secret key and an API key that doesn't require signed requests.`,
       );
     }
+    // Without a method, a client that signs sends GET, because POST requests can't be signed.
+    const method =
+      serialized.method ??
+      (this.#secretKey === undefined
+        ? CaptureHttpMethod.POST
+        : CaptureHttpMethod.GET);
     const expectedResponseKind = getExpectedResponseKind(captureOptions);
     throwIfAborted(serialized.signal);
     const signature = this.#createSignature(serialized.pairs);
@@ -140,12 +165,12 @@ export class ScreenshotScoutClient {
       Authorization: `Bearer ${this.#accessKey}`,
     });
     const requestInit: RequestInit = {
-      method: serialized.method,
+      method,
       headers,
       redirect: "manual",
     };
 
-    if (serialized.method === CaptureHttpMethod.GET) {
+    if (method === CaptureHttpMethod.GET) {
       const pairs: WirePair[] = [...serialized.pairs];
       if (signature !== undefined) pairs.push(["signature", signature]);
       requestUrl.search = encodeQueryPairs(pairs);

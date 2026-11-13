@@ -1,7 +1,9 @@
 import { createHmac } from "node:crypto";
 
 import {
+  BASE_URL_VARIABLE,
   readProcessEnvironment,
+  resolveCaptureEndpoint,
   resolveCredentials,
   SECRET_KEY_VARIABLE,
 } from "./credentials.js";
@@ -34,18 +36,20 @@ import type {
   ScreenshotScoutFetch,
 } from "./types.js";
 
-const CAPTURE_ENDPOINT = "https://api.screenshotscout.com/v1/capture";
 const ACCESS_KEY_PATTERN = /^[A-Za-z0-9\-._~+/]+=*$/;
 
 export class ScreenshotScoutClient {
   readonly #accessKey: string;
   readonly #secretKey: string | undefined;
   readonly #secretKeyFromEnvironment: boolean;
+  readonly #captureEndpoint: string;
+  readonly #baseUrlFromEnvironment: boolean;
   readonly #fetch: ScreenshotScoutFetch;
 
   /**
    * Creates a client. When `options` passes no key, the client reads `SCREENSHOTSCOUT_ACCESS_KEY`
    * and, if it's set, `SCREENSHOTSCOUT_SECRET_KEY`. Passing either key means neither variable is read.
+   * When `options` passes no base URL, the client reads `SCREENSHOTSCOUT_BASE_URL`.
    */
   constructor(options?: ScreenshotScoutClientOptions | null) {
     if (
@@ -104,10 +108,17 @@ export class ScreenshotScoutClient {
       );
     }
 
+    const endpoint = resolveCaptureEndpoint(
+      clientOptions.baseUrl,
+      readProcessEnvironment,
+    );
+
     this.#accessKey = accessKey;
     this.#secretKey = secretKey;
     this.#secretKeyFromEnvironment =
       credentials.fromEnvironment && secretKey !== undefined;
+    this.#captureEndpoint = endpoint.captureEndpoint;
+    this.#baseUrlFromEnvironment = endpoint.fromEnvironment;
     this.#fetch =
       fetchOption === undefined
         ? globalThis.fetch.bind(globalThis)
@@ -160,7 +171,7 @@ export class ScreenshotScoutClient {
     throwIfAborted(serialized.signal);
     const signature = this.#createSignature(serialized.pairs);
 
-    const requestUrl = new URL(CAPTURE_ENDPOINT);
+    let requestUrlText = this.#captureEndpoint;
     const headers = new Headers({
       Authorization: `Bearer ${this.#accessKey}`,
     });
@@ -173,7 +184,7 @@ export class ScreenshotScoutClient {
     if (method === CaptureHttpMethod.GET) {
       const pairs: WirePair[] = [...serialized.pairs];
       if (signature !== undefined) pairs.push(["signature", signature]);
-      requestUrl.search = encodeQueryPairs(pairs);
+      requestUrlText += `?${encodeQueryPairs(pairs)}`;
     } else {
       headers.set("Content-Type", "application/json");
       try {
@@ -193,6 +204,8 @@ export class ScreenshotScoutClient {
 
     let rawResponse: RawResponse;
     try {
+      // Parsed here, so a base URL that isn't a valid URL fails like an unreachable server.
+      const requestUrl = new URL(requestUrlText);
       const response = await this.#fetch(requestUrl, requestInit);
       const body = new Uint8Array(await response.arrayBuffer());
       rawResponse = createRawResponse(response, body);
@@ -200,8 +213,11 @@ export class ScreenshotScoutClient {
       if (serialized.signal?.aborted) {
         throw cause;
       }
+      const source = this.#baseUrlFromEnvironment
+        ? ` The base URL comes from ${BASE_URL_VARIABLE}.`
+        : "";
       throw new ScreenshotScoutTransportError(
-        "Screenshot Scout request failed before an HTTP response body was received.",
+        `Screenshot Scout request failed before an HTTP response body was received.${source}`,
         cause,
       );
     }
@@ -219,7 +235,6 @@ export class ScreenshotScoutClient {
   ): string {
     const serialized = serializeCaptureOptions(targetUrl, captureOptions);
     const signature = this.#createSignature(serialized.pairs);
-    const requestUrl = new URL(CAPTURE_ENDPOINT);
 
     const pairs: WirePair[] = [
       ["access_key", this.#accessKey],
@@ -228,9 +243,8 @@ export class ScreenshotScoutClient {
     if (signature !== undefined) {
       pairs.push(["signature", signature]);
     }
-    requestUrl.search = encodeQueryPairs(pairs);
 
-    return requestUrl.toString();
+    return `${this.#captureEndpoint}?${encodeQueryPairs(pairs)}`;
   }
 
   #createSignature(pairs: readonly WirePair[]): string | undefined {

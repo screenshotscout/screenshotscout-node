@@ -245,6 +245,12 @@ export interface ScreenshotScoutClientOptions {
    * is passed. A client with a secret key sends captures as GET, because POST requests can't be signed.
    */
   secretKey?: string | null;
+  /**
+   * Sends requests to another server, such as your own proxy or a mock server. Captures go to this
+   * URL plus `/v1/capture`, and `buildCaptureUrl()` builds URLs on it. Defaults to
+   * `SCREENSHOTSCOUT_BASE_URL`, then to the Screenshot Scout API.
+   */
+  baseUrl?: string | null;
   /** Advanced: Fetch-compatible transport. Defaults to the platform Fetch implementation. */
   fetch?: ScreenshotScoutFetch | null;
 }

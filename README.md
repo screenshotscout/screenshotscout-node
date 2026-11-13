@@ -140,6 +140,20 @@ const client = new ScreenshotScoutClient({
 
 If you pass either key, the client reads neither environment variable. If you pass no key, for example because the variable holding it is `undefined`, the client reads both environment variables instead.
 
+## Send requests to another server
+
+To send requests to another server, such as your own proxy or a mock server, pass its base URL, or set it as the `SCREENSHOTSCOUT_BASE_URL` environment variable:
+
+```ts
+import { ScreenshotScoutClient } from "@screenshotscout/sdk";
+
+const client = new ScreenshotScoutClient({
+  baseUrl: "https://proxy.example.com",
+}); // Reads SCREENSHOTSCOUT_ACCESS_KEY
+```
+
+The client sends captures to the base URL plus `/v1/capture`, and `buildCaptureUrl()` builds URLs on it. A base URL you pass wins over the variable.
+
 ## Capture options
 
 The target URL is the required first argument. `CaptureOptions` contains every current service option using camelCase:

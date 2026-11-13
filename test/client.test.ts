@@ -23,9 +23,10 @@ import type {
   ScreenshotScoutFetch,
 } from "../src/index.js";
 
-// Keys set in the developer's own environment must not reach these tests.
+// Variables set in the developer's own environment must not reach these tests.
 delete process.env.SCREENSHOTSCOUT_ACCESS_KEY;
 delete process.env.SCREENSHOTSCOUT_SECRET_KEY;
+delete process.env.SCREENSHOTSCOUT_BASE_URL;
 
 interface RecordedCall {
   readonly input: string | URL | Request;
@@ -998,6 +999,246 @@ test("caller cancellation follows AbortSignal semantics and is not wrapped", asy
     (error: unknown) => error === reason,
   );
   assert.equal(transport.calls.length, 0);
+});
+
+test("a base URL sends POST, GET and built URLs to that server", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    baseUrl: "http://localhost:8787/",
+    fetch: transport.fetch,
+  });
+
+  await client.capture("https://example.com");
+  await client.capture(
+    "https://example.com",
+    {},
+    { method: CaptureHttpMethod.GET },
+  );
+
+  assert.equal(
+    callUrl(transport.calls[0]!).href,
+    "http://localhost:8787/v1/capture",
+  );
+  assert.equal(
+    callUrl(transport.calls[1]!).href,
+    "http://localhost:8787/v1/capture?url=https%3A%2F%2Fexample.com",
+  );
+  assert.equal(
+    client.buildCaptureUrl("https://example.com"),
+    "http://localhost:8787/v1/capture?access_key=ak_test&url=https%3A%2F%2Fexample.com",
+  );
+});
+
+test("a base URL keeps its path and leaves signing unchanged", async () => {
+  const transport = recordingFetch(jsonResponse);
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    secretKey: "sk_test",
+    baseUrl: "https://proxy.example.com/screenshotscout//",
+    fetch: transport.fetch,
+  });
+  const targetUrl = "https://example.com/a b?x=1&y=2";
+  const options = {
+    responseType: "json",
+    fullPage: false,
+    delay: 0,
+    headers: ["X-Test:one", "X-Test:two"],
+  } satisfies CaptureOptions;
+
+  await client.capture(targetUrl, options);
+  const getUrl = callUrl(transport.calls[0]!);
+  const builtUrl = new URL(client.buildCaptureUrl(targetUrl, options));
+
+  for (const url of [getUrl, builtUrl]) {
+    assert.equal(url.origin, "https://proxy.example.com");
+    assert.equal(url.pathname, "/screenshotscout/v1/capture");
+    assert.equal(
+      url.searchParams.get("signature"),
+      "6419f2ac8c0440f1e341b547630606c9dc74dacfbb2df8e122fc9ae26831d893",
+    );
+  }
+});
+
+test("an empty base URL means the Screenshot Scout API, and a non-string one is an error", async () => {
+  for (const baseUrl of ["", null]) {
+    const transport = recordingFetch();
+    const client = new ScreenshotScoutClient({
+      accessKey: "key",
+      baseUrl,
+      fetch: transport.fetch,
+    });
+
+    await client.capture("https://example.com");
+
+    assert.equal(
+      callUrl(transport.calls[0]!).href,
+      "https://api.screenshotscout.com/v1/capture",
+    );
+  }
+
+  assert.throws(
+    () => new ScreenshotScoutClient({ accessKey: "key", baseUrl: 1 as never }),
+    {
+      name: "ScreenshotScoutConfigurationError",
+      message: "The Screenshot Scout base URL must be a string when provided.",
+    },
+  );
+});
+
+test("without a base URL, the client reads SCREENSHOTSCOUT_BASE_URL once, even with keys passed", async () => {
+  await withEnvironment(
+    { SCREENSHOTSCOUT_BASE_URL: "http://localhost:8787" },
+    async () => {
+      const transport = recordingFetch();
+      const client = new ScreenshotScoutClient({
+        accessKey: "ak_code",
+        fetch: transport.fetch,
+      });
+      process.env.SCREENSHOTSCOUT_BASE_URL = "http://changed.example";
+
+      await client.capture("https://example.com");
+
+      assert.equal(
+        callUrl(transport.calls[0]!).href,
+        "http://localhost:8787/v1/capture",
+      );
+      assert.equal(
+        client.buildCaptureUrl("https://example.com"),
+        "http://localhost:8787/v1/capture?access_key=ak_code&url=https%3A%2F%2Fexample.com",
+      );
+    },
+  );
+});
+
+test("a base URL passed in code wins over SCREENSHOTSCOUT_BASE_URL", async () => {
+  await withEnvironment(
+    { SCREENSHOTSCOUT_BASE_URL: "http://localhost:8787" },
+    async () => {
+      const transport = recordingFetch();
+      const client = new ScreenshotScoutClient({
+        accessKey: "key",
+        baseUrl: "https://proxy.example.com",
+        fetch: transport.fetch,
+      });
+
+      await client.capture("https://example.com");
+
+      assert.equal(
+        callUrl(transport.calls[0]!).href,
+        "https://proxy.example.com/v1/capture",
+      );
+    },
+  );
+});
+
+test("an empty SCREENSHOTSCOUT_BASE_URL means the Screenshot Scout API, and a blank one is an error", async () => {
+  await withEnvironment({ SCREENSHOTSCOUT_BASE_URL: "" }, async () => {
+    const transport = recordingFetch();
+    const client = new ScreenshotScoutClient({
+      accessKey: "key",
+      fetch: transport.fetch,
+    });
+
+    await client.capture("https://example.com");
+
+    assert.equal(
+      callUrl(transport.calls[0]!).href,
+      "https://api.screenshotscout.com/v1/capture",
+    );
+  });
+
+  await withEnvironment({ SCREENSHOTSCOUT_BASE_URL: " \t" }, () => {
+    assert.throws(() => new ScreenshotScoutClient({ accessKey: "key" }), {
+      name: "ScreenshotScoutConfigurationError",
+      message: "SCREENSHOTSCOUT_BASE_URL is set but blank.",
+    });
+  });
+});
+
+test("a transport failure names SCREENSHOTSCOUT_BASE_URL only when the base URL came from it", async () => {
+  const nativeCause = new Error("connection refused");
+  const fetch: ScreenshotScoutFetch = async () => {
+    throw nativeCause;
+  };
+  const message =
+    "Screenshot Scout request failed before an HTTP response body was received.";
+
+  await withEnvironment(
+    { SCREENSHOTSCOUT_BASE_URL: "http://localhost:8787" },
+    async () => {
+      await assert.rejects(
+        new ScreenshotScoutClient({ accessKey: "key", fetch }).capture(
+          "https://example.com",
+        ),
+        (error: unknown) => {
+          assert.equal(error instanceof ScreenshotScoutTransportError, true);
+          if (!(error instanceof ScreenshotScoutTransportError)) return false;
+          assert.equal(
+            error.message,
+            `${message} The base URL comes from SCREENSHOTSCOUT_BASE_URL.`,
+          );
+          assert.equal(error.cause, nativeCause);
+          return true;
+        },
+      );
+
+      await assert.rejects(
+        new ScreenshotScoutClient({
+          accessKey: "key",
+          baseUrl: "http://localhost:8787",
+          fetch,
+        }).capture("https://example.com"),
+        { name: "ScreenshotScoutTransportError", message },
+      );
+    },
+  );
+});
+
+test("cancellation is not wrapped when the base URL comes from SCREENSHOTSCOUT_BASE_URL", async () => {
+  await withEnvironment(
+    { SCREENSHOTSCOUT_BASE_URL: "http://localhost:8787" },
+    async () => {
+      const controller = new AbortController();
+      const reason = new DOMException("stop", "AbortError");
+      const fetch: ScreenshotScoutFetch = async () => {
+        controller.abort(reason);
+        throw reason;
+      };
+      const client = new ScreenshotScoutClient({ accessKey: "key", fetch });
+
+      await assert.rejects(
+        client.capture("https://example.com", undefined, {
+          signal: controller.signal,
+        }),
+        (error: unknown) => error === reason,
+      );
+    },
+  );
+});
+
+test("a base URL that can't be parsed fails as a transport error, and built URLs use it as given", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    baseUrl: "not a url",
+    fetch: transport.fetch,
+  });
+
+  await assert.rejects(
+    client.capture("https://example.com"),
+    (error: unknown) => {
+      assert.equal(error instanceof ScreenshotScoutTransportError, true);
+      if (!(error instanceof ScreenshotScoutTransportError)) return false;
+      assert.equal(error.cause instanceof TypeError, true);
+      return true;
+    },
+  );
+  assert.equal(transport.calls.length, 0);
+  assert.equal(
+    client.buildCaptureUrl("https://example.com"),
+    "not a url/v1/capture?access_key=key&url=https%3A%2F%2Fexample.com",
+  );
 });
 
 function assertCaptureReturnTypes(

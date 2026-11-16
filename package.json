@@ -24,7 +24,7 @@
     "clean": "node -e \"const fs = require('node:fs'); for (const path of ['dist']) fs.rmSync(path, { force: true, recursive: true });\"",
     "format:check": "prettier --check .",
     "prepack": "npm run clean && npm run build",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"
   },
   "repository": {

@@ -14,6 +14,7 @@ export const CaptureFormat = {
   GIF: "gif",
   JPEG: "jpeg",
   JPG: "jpg",
+  MD: "md",
   PDF: "pdf",
   PNG: "png",
   TIFF: "tiff",
@@ -229,6 +230,11 @@ export type JsonCaptureOptions = Omit<CaptureOptions, "responseType"> & {
   responseType: typeof CaptureResponseType.JSON;
 };
 
+/** Options that request a page as Markdown in the default binary representation. */
+export type MarkdownCaptureOptions = Omit<BinaryCaptureOptions, "format"> & {
+  format: typeof CaptureFormat.MD | "markdown";
+};
+
 export type ScreenshotScoutFetch = (
   input: string | URL | Request,
   init?: RequestInit,
@@ -275,6 +281,8 @@ export interface CaptureResult {
 export interface BinaryCaptureResponse {
   readonly kind: "binary";
   readonly bytes: Uint8Array;
+  /** The page as Markdown text, present when the response is Markdown (`format: "md"`). */
+  readonly markdown?: string;
   readonly screenshotUrl?: string;
   readonly screenshotUrlExpiresAt?: string;
   readonly cacheStatus?: string;
@@ -286,5 +294,10 @@ export interface JsonCaptureResponse {
   readonly result: CaptureResult;
   readonly rawResponse: RawResponse;
 }
+
+/** A binary response to a Markdown request, which always includes the Markdown text. */
+export type MarkdownCaptureResponse = BinaryCaptureResponse & {
+  readonly markdown: string;
+};
 
 export type CaptureResponse = BinaryCaptureResponse | JsonCaptureResponse;

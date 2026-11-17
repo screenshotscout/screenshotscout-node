@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CaptureFormat,
   CaptureHttpMethod,
   CaptureResponseType,
   ScreenshotScoutApiError,
@@ -20,6 +21,7 @@ import type {
   CaptureResponse,
   CaptureResponseType as CaptureResponseTypeValue,
   JsonCaptureResponse,
+  MarkdownCaptureResponse,
   ScreenshotScoutFetch,
 } from "../src/index.js";
 
@@ -707,6 +709,95 @@ test("the default binary response retains bytes, metadata, and raw response", as
     "a=1; Path=/",
     "b=2; Path=/",
   ]);
+  assert.equal(Object.hasOwn(response, "markdown"), false);
+});
+
+test("a Markdown response keeps its bytes and adds the decoded text", async () => {
+  const markdown = "# Привет\n\nHello, world.\n";
+  const transport = recordingFetch(
+    () =>
+      new Response(new TextEncoder().encode(markdown), {
+        status: 200,
+        headers: { "content-type": "text/markdown; charset=utf-8" },
+      }),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  const response = await client.capture("https://example.com", {
+    format: CaptureFormat.MD,
+  });
+
+  assert.equal(response.kind, "binary");
+  assert.equal(response.markdown, markdown);
+  assert.equal(new TextDecoder().decode(response.bytes), markdown);
+});
+
+test("the Markdown media type ignores case and parameters", async () => {
+  const transport = recordingFetch(
+    () =>
+      new Response("# Title", {
+        status: 200,
+        headers: { "content-type": "TEXT/MARKDOWN; Charset=UTF-8" },
+      }),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  const response = await client.capture("https://example.com", {
+    format: "markdown",
+  });
+
+  assert.equal(response.markdown, "# Title");
+});
+
+test("an empty Markdown response has empty markdown text", async () => {
+  const transport = recordingFetch(
+    () =>
+      new Response(new Uint8Array(0), {
+        status: 200,
+        headers: { "content-type": "text/markdown; charset=utf-8" },
+      }),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  const response = await client.capture("https://example.com", {
+    format: CaptureFormat.MD,
+  });
+
+  assert.equal(response.markdown, "");
+});
+
+test("a Markdown request rejects a successful binary response that isn't Markdown", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  await assert.rejects(
+    client.capture("https://example.com", { format: CaptureFormat.MD }),
+    (error: unknown) => {
+      assert.equal(error instanceof ScreenshotScoutResponseDecodingError, true);
+      if (!(error instanceof ScreenshotScoutResponseDecodingError)) {
+        return false;
+      }
+      assert.match(error.message, /isn't Markdown when Markdown was requested/);
+      assert.equal(error.rawResponse.contentType, "image/png");
+      return true;
+    },
+  );
+});
+
+test("CaptureFormat.MD is the md format value", () => {
+  assert.equal(CaptureFormat.MD, "md");
 });
 
 test("an explicit JSON response retains documented and additional fields", async () => {
@@ -1278,6 +1369,22 @@ function assertCaptureReturnTypes(
     "https://example.com",
     dynamicOptions,
   );
+  const markdownResponse: Promise<MarkdownCaptureResponse> = client.capture(
+    "https://example.com",
+    { format: CaptureFormat.MD },
+  );
+  const markdownAliasResponse: Promise<MarkdownCaptureResponse> =
+    client.capture("https://example.com", {
+      format: "markdown",
+      responseType: CaptureResponseType.BINARY,
+    });
+  const markdownText: Promise<string> = markdownResponse.then(
+    (response) => response.markdown,
+  );
+  const markdownJsonResponse: Promise<JsonCaptureResponse> = client.capture(
+    "https://example.com",
+    { format: CaptureFormat.MD, responseType: CaptureResponseType.JSON },
+  );
 
   void defaultResponse;
   void explicitBinaryResponse;
@@ -1286,6 +1393,9 @@ function assertCaptureReturnTypes(
   void maybeDynamicResponse;
   void signaledResponse;
   void captureUrl;
+  void markdownAliasResponse;
+  void markdownText;
+  void markdownJsonResponse;
 }
 
 void assertCaptureReturnTypes;

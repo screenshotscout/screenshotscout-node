@@ -28,6 +28,8 @@ export type {
   CaptureResult,
   JsonCaptureOptions,
   JsonCaptureResponse,
+  MarkdownCaptureOptions,
+  MarkdownCaptureResponse,
   OpenString,
   RawResponse,
   ScreenshotScoutClientOptions,

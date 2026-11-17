@@ -31,6 +31,8 @@ import type {
   CaptureResult,
   JsonCaptureOptions,
   JsonCaptureResponse,
+  MarkdownCaptureOptions,
+  MarkdownCaptureResponse,
   RawResponse,
   ScreenshotScoutClientOptions,
   ScreenshotScoutFetch,
@@ -132,6 +134,11 @@ export class ScreenshotScoutClient {
   ): Promise<JsonCaptureResponse>;
   capture(
     targetUrl: string,
+    captureOptions: MarkdownCaptureOptions,
+    captureRequestOptions?: CaptureRequestOptions | null,
+  ): Promise<MarkdownCaptureResponse>;
+  capture(
+    targetUrl: string,
     captureOptions?: BinaryCaptureOptions | null,
     captureRequestOptions?: CaptureRequestOptions | null,
   ): Promise<BinaryCaptureResponse>;
@@ -226,7 +233,21 @@ export class ScreenshotScoutClient {
       throw createApiError(rawResponse);
     }
 
-    return decodeSuccessResponse(rawResponse, expectedResponseKind);
+    const decoded = decodeSuccessResponse(rawResponse, expectedResponseKind);
+    if (
+      decoded.kind === "binary" &&
+      decoded.markdown === undefined &&
+      isMarkdownFormat(captureOptions)
+    ) {
+      throw new ScreenshotScoutResponseDecodingError(
+        "Screenshot Scout returned a successful binary response that isn't Markdown when Markdown was requested.",
+        rawResponse,
+        new TypeError(
+          `Expected a text/markdown response but received ${rawResponse.contentType ?? "no content type"}.`,
+        ),
+      );
+    }
+    return decoded;
   }
 
   buildCaptureUrl(
@@ -366,10 +387,14 @@ function decodeBinaryResponse(rawResponse: RawResponse): BinaryCaptureResponse {
     "screenshot-scout-screenshot-url-expires-at",
   );
   const cacheStatus = firstHeader(headers, "screenshot-scout-cache-status");
+  const markdown = isMarkdownMediaType(rawResponse.contentType)
+    ? new TextDecoder().decode(rawResponse.body)
+    : undefined;
 
   return {
     kind: "binary",
     bytes: rawResponse.body,
+    ...(markdown === undefined ? {} : { markdown }),
     ...(screenshotUrl === undefined ? {} : { screenshotUrl }),
     ...(screenshotUrlExpiresAt === undefined ? {} : { screenshotUrlExpiresAt }),
     ...(cacheStatus === undefined ? {} : { cacheStatus }),
@@ -455,6 +480,21 @@ function isJsonMediaType(contentType: string | null): boolean {
   return (
     mediaType === "application/json" || Boolean(mediaType?.endsWith("+json"))
   );
+}
+
+function isMarkdownMediaType(contentType: string | null): boolean {
+  if (contentType === null) return false;
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType === "text/markdown";
+}
+
+function isMarkdownFormat(
+  captureOptions: CaptureOptions | null | undefined,
+): boolean {
+  const format = captureOptions?.format;
+  if (typeof format !== "string") return false;
+  const normalized = format.trim().toLowerCase();
+  return normalized === "md" || normalized === "markdown";
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

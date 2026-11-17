@@ -49,6 +49,22 @@ console.log(response.screenshotUrl);
 
 By default, `capture()` returns a `BinaryCaptureResponse`, with the screenshot available as `response.bytes`.
 
+## Get a page as Markdown
+
+Set `format` to `CaptureFormat.MD` to get the page as Markdown text in `response.markdown`:
+
+```ts
+import { CaptureFormat, ScreenshotScoutClient } from "@screenshotscout/sdk";
+
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY
+
+const response = await client.capture("https://example.com", {
+  format: CaptureFormat.MD,
+});
+
+console.log(response.markdown);
+```
+
 ## Request a JSON result
 
 ```ts

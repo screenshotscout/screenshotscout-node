@@ -26,6 +26,8 @@ export type {
   CaptureRequestOptions,
   CaptureResponse,
   CaptureResult,
+  HtmlCaptureOptions,
+  HtmlCaptureResponse,
   JsonCaptureOptions,
   JsonCaptureResponse,
   MarkdownCaptureOptions,

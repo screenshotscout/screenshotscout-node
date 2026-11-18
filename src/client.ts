@@ -29,6 +29,8 @@ import type {
   CaptureRequestOptions,
   CaptureResponse,
   CaptureResult,
+  HtmlCaptureOptions,
+  HtmlCaptureResponse,
   JsonCaptureOptions,
   JsonCaptureResponse,
   MarkdownCaptureOptions,
@@ -139,6 +141,11 @@ export class ScreenshotScoutClient {
   ): Promise<MarkdownCaptureResponse>;
   capture(
     targetUrl: string,
+    captureOptions: HtmlCaptureOptions,
+    captureRequestOptions?: CaptureRequestOptions | null,
+  ): Promise<HtmlCaptureResponse>;
+  capture(
+    targetUrl: string,
     captureOptions?: BinaryCaptureOptions | null,
     captureRequestOptions?: CaptureRequestOptions | null,
   ): Promise<BinaryCaptureResponse>;
@@ -244,6 +251,19 @@ export class ScreenshotScoutClient {
         rawResponse,
         new TypeError(
           `Expected a text/markdown response but received ${rawResponse.contentType ?? "no content type"}.`,
+        ),
+      );
+    }
+    if (
+      decoded.kind === "binary" &&
+      decoded.html === undefined &&
+      isHtmlFormat(captureOptions)
+    ) {
+      throw new ScreenshotScoutResponseDecodingError(
+        "Screenshot Scout returned a successful binary response that isn't HTML when HTML was requested.",
+        rawResponse,
+        new TypeError(
+          `Expected a text/html response but received ${rawResponse.contentType ?? "no content type"}.`,
         ),
       );
     }
@@ -390,11 +410,15 @@ function decodeBinaryResponse(rawResponse: RawResponse): BinaryCaptureResponse {
   const markdown = isMarkdownMediaType(rawResponse.contentType)
     ? new TextDecoder().decode(rawResponse.body)
     : undefined;
+  const html = isHtmlMediaType(rawResponse.contentType)
+    ? new TextDecoder().decode(rawResponse.body)
+    : undefined;
 
   return {
     kind: "binary",
     bytes: rawResponse.body,
     ...(markdown === undefined ? {} : { markdown }),
+    ...(html === undefined ? {} : { html }),
     ...(screenshotUrl === undefined ? {} : { screenshotUrl }),
     ...(screenshotUrlExpiresAt === undefined ? {} : { screenshotUrlExpiresAt }),
     ...(cacheStatus === undefined ? {} : { cacheStatus }),
@@ -488,6 +512,12 @@ function isMarkdownMediaType(contentType: string | null): boolean {
   return mediaType === "text/markdown";
 }
 
+function isHtmlMediaType(contentType: string | null): boolean {
+  if (contentType === null) return false;
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType === "text/html";
+}
+
 function isMarkdownFormat(
   captureOptions: CaptureOptions | null | undefined,
 ): boolean {
@@ -495,6 +525,14 @@ function isMarkdownFormat(
   if (typeof format !== "string") return false;
   const normalized = format.trim().toLowerCase();
   return normalized === "md" || normalized === "markdown";
+}
+
+function isHtmlFormat(
+  captureOptions: CaptureOptions | null | undefined,
+): boolean {
+  const format = captureOptions?.format;
+  if (typeof format !== "string") return false;
+  return format.trim().toLowerCase() === "html";
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {

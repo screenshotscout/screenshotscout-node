@@ -12,6 +12,7 @@ export type CaptureHttpMethod =
 
 export const CaptureFormat = {
   GIF: "gif",
+  HTML: "html",
   JPEG: "jpeg",
   JPG: "jpg",
   MD: "md",
@@ -235,6 +236,11 @@ export type MarkdownCaptureOptions = Omit<BinaryCaptureOptions, "format"> & {
   format: typeof CaptureFormat.MD | "markdown";
 };
 
+/** Options that request a page's HTML in the default binary representation. */
+export type HtmlCaptureOptions = Omit<BinaryCaptureOptions, "format"> & {
+  format: typeof CaptureFormat.HTML | "html";
+};
+
 export type ScreenshotScoutFetch = (
   input: string | URL | Request,
   init?: RequestInit,
@@ -283,6 +289,8 @@ export interface BinaryCaptureResponse {
   readonly bytes: Uint8Array;
   /** The page as Markdown text, present when the response is Markdown (`format: "md"`). */
   readonly markdown?: string;
+  /** The page's HTML, present when the response is HTML (`format: "html"`). */
+  readonly html?: string;
   readonly screenshotUrl?: string;
   readonly screenshotUrlExpiresAt?: string;
   readonly cacheStatus?: string;
@@ -298,6 +306,11 @@ export interface JsonCaptureResponse {
 /** A binary response to a Markdown request, which always includes the Markdown text. */
 export type MarkdownCaptureResponse = BinaryCaptureResponse & {
   readonly markdown: string;
+};
+
+/** A binary response to an HTML request, which always includes the HTML. */
+export type HtmlCaptureResponse = BinaryCaptureResponse & {
+  readonly html: string;
 };
 
 export type CaptureResponse = BinaryCaptureResponse | JsonCaptureResponse;

@@ -20,6 +20,7 @@ import type {
   CaptureRequestOptions,
   CaptureResponse,
   CaptureResponseType as CaptureResponseTypeValue,
+  HtmlCaptureResponse,
   JsonCaptureResponse,
   MarkdownCaptureResponse,
   ScreenshotScoutFetch,
@@ -710,6 +711,7 @@ test("the default binary response retains bytes, metadata, and raw response", as
     "b=2; Path=/",
   ]);
   assert.equal(Object.hasOwn(response, "markdown"), false);
+  assert.equal(Object.hasOwn(response, "html"), false);
 });
 
 test("a Markdown response keeps its bytes and adds the decoded text", async () => {
@@ -733,6 +735,7 @@ test("a Markdown response keeps its bytes and adds the decoded text", async () =
   assert.equal(response.kind, "binary");
   assert.equal(response.markdown, markdown);
   assert.equal(new TextDecoder().decode(response.bytes), markdown);
+  assert.equal(Object.hasOwn(response, "html"), false);
 });
 
 test("the Markdown media type ignores case and parameters", async () => {
@@ -798,6 +801,95 @@ test("a Markdown request rejects a successful binary response that isn't Markdow
 
 test("CaptureFormat.MD is the md format value", () => {
   assert.equal(CaptureFormat.MD, "md");
+});
+
+test("an HTML response keeps its bytes and adds the decoded text", async () => {
+  const html = "<h1>Привет</h1>\n<p>Hello, world.</p>\n";
+  const transport = recordingFetch(
+    () =>
+      new Response(new TextEncoder().encode(html), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  const response = await client.capture("https://example.com", {
+    format: CaptureFormat.HTML,
+  });
+
+  assert.equal(response.kind, "binary");
+  assert.equal(response.html, html);
+  assert.equal(new TextDecoder().decode(response.bytes), html);
+  assert.equal(Object.hasOwn(response, "markdown"), false);
+});
+
+test("the HTML media type ignores case and parameters", async () => {
+  const transport = recordingFetch(
+    () =>
+      new Response("<h1>Title</h1>", {
+        status: 200,
+        headers: { "content-type": "TEXT/HTML; charset=UTF-8" },
+      }),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  const response = await client.capture("https://example.com", {
+    format: "html",
+  });
+
+  assert.equal(response.html, "<h1>Title</h1>");
+});
+
+test("an empty HTML response has empty html text", async () => {
+  const transport = recordingFetch(
+    () =>
+      new Response(new Uint8Array(0), {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  const response = await client.capture("https://example.com", {
+    format: CaptureFormat.HTML,
+  });
+
+  assert.equal(response.html, "");
+});
+
+test("an HTML request rejects a successful binary response that isn't HTML", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  await assert.rejects(
+    client.capture("https://example.com", { format: CaptureFormat.HTML }),
+    (error: unknown) => {
+      assert.equal(error instanceof ScreenshotScoutResponseDecodingError, true);
+      if (!(error instanceof ScreenshotScoutResponseDecodingError)) {
+        return false;
+      }
+      assert.match(error.message, /isn't HTML when HTML was requested/);
+      assert.equal(error.rawResponse.contentType, "image/png");
+      return true;
+    },
+  );
+});
+
+test("CaptureFormat.HTML is the html format value", () => {
+  assert.equal(CaptureFormat.HTML, "html");
 });
 
 test("an explicit JSON response retains documented and additional fields", async () => {
@@ -1385,6 +1477,22 @@ function assertCaptureReturnTypes(
     "https://example.com",
     { format: CaptureFormat.MD, responseType: CaptureResponseType.JSON },
   );
+  const htmlResponse: Promise<HtmlCaptureResponse> = client.capture(
+    "https://example.com",
+    { format: CaptureFormat.HTML },
+  );
+  const htmlExplicitBinaryResponse: Promise<HtmlCaptureResponse> =
+    client.capture("https://example.com", {
+      format: "html",
+      responseType: CaptureResponseType.BINARY,
+    });
+  const htmlText: Promise<string> = htmlResponse.then(
+    (response) => response.html,
+  );
+  const htmlJsonResponse: Promise<JsonCaptureResponse> = client.capture(
+    "https://example.com",
+    { format: CaptureFormat.HTML, responseType: CaptureResponseType.JSON },
+  );
 
   void defaultResponse;
   void explicitBinaryResponse;
@@ -1396,6 +1504,9 @@ function assertCaptureReturnTypes(
   void markdownAliasResponse;
   void markdownText;
   void markdownJsonResponse;
+  void htmlExplicitBinaryResponse;
+  void htmlText;
+  void htmlJsonResponse;
 }
 
 void assertCaptureReturnTypes;

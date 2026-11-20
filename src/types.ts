@@ -221,6 +221,12 @@ export interface CaptureRequestOptions {
   signal?: AbortSignal | null;
 }
 
+/** HTTP controls for one `captureFromHtml()` call. The HTML is always sent in a POST request. */
+export interface CaptureFromHtmlRequestOptions {
+  /** Cancels this call using normal Fetch/AbortSignal semantics. */
+  signal?: AbortSignal | null;
+}
+
 /** Options that request the default binary representation. */
 export type BinaryCaptureOptions = Omit<CaptureOptions, "responseType"> & {
   responseType?: typeof CaptureResponseType.BINARY | null;

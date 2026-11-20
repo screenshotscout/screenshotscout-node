@@ -70,6 +70,38 @@ console.log(response.result.cacheStatus);
 
 Set `responseType` to `CaptureResponseType.JSON` to receive screenshot metadata as JSON instead of binary file data.
 
+## Capture from HTML
+
+To render HTML you generated, such as an invoice or a report, call `captureFromHtml()` with the document instead of a URL. It takes the same options as `capture()`:
+
+```ts
+import { writeFile } from "node:fs/promises";
+import { CaptureFormat, ScreenshotScoutClient } from "@screenshotscout/sdk";
+
+const client = new ScreenshotScoutClient(); // Reads SCREENSHOTSCOUT_ACCESS_KEY
+
+const html = `<!doctype html>
+<html>
+  <head>
+    <title>Invoice #1042</title>
+  </head>
+  <body>
+    <h1>Invoice #1042</h1>
+    <p>Total due: $480.00</p>
+  </body>
+</html>`;
+
+const response = await client.captureFromHtml(html, {
+  format: CaptureFormat.PDF,
+});
+
+await writeFile("invoice.pdf", response.bytes);
+```
+
+Send a complete document that starts with `<!doctype html>`. A PDF takes its title from `<title>`. The page has no URL, so use absolute URLs for images, stylesheets and fonts, or add a `<base href>`. See [How to Render HTML](https://screenshotscout.com/docs/guides/render-html) for more.
+
+The HTML is sent in a POST request, which can't be signed. So `captureFromHtml()` needs a client without a secret key, and an API key that doesn't require signed requests.
+
 ## Use GET
 
 POST is the default, or GET when the client has a secret key. To use GET, pass `CaptureHttpMethod.GET` in the third argument:

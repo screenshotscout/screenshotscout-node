@@ -14,6 +14,7 @@ import {
 } from "../src/index.js";
 import type {
   BinaryCaptureResponse,
+  CaptureFromHtmlRequestOptions,
   CaptureFormat as CaptureFormatType,
   CaptureHttpMethod as CaptureHttpMethodType,
   CaptureOptions,
@@ -1493,6 +1494,29 @@ function assertCaptureReturnTypes(
     "https://example.com",
     { format: CaptureFormat.HTML, responseType: CaptureResponseType.JSON },
   );
+  const fromHtmlDefault: Promise<BinaryCaptureResponse> =
+    client.captureFromHtml("<!doctype html><title>Invoice</title>");
+  const fromHtmlJson: Promise<JsonCaptureResponse> = client.captureFromHtml(
+    "<!doctype html><title>Invoice</title>",
+    { format: CaptureFormat.PDF, responseType: CaptureResponseType.JSON },
+  );
+  const fromHtmlMarkdown: Promise<MarkdownCaptureResponse> =
+    client.captureFromHtml("<!doctype html><title>Invoice</title>", {
+      format: CaptureFormat.MD,
+    });
+  const fromHtmlHtml: Promise<HtmlCaptureResponse> = client.captureFromHtml(
+    "<!doctype html><title>Invoice</title>",
+    { format: CaptureFormat.HTML },
+  );
+  const fromHtmlDynamic: Promise<CaptureResponse> = client.captureFromHtml(
+    "<!doctype html><title>Invoice</title>",
+    dynamicOptions,
+    { signal: AbortSignal.timeout(1_000) },
+  );
+  const fromHtmlRequestOptions: CaptureFromHtmlRequestOptions = {
+    // @ts-expect-error HTML is always sent in a POST request, so there's no method to choose.
+    method: CaptureHttpMethod.POST,
+  };
 
   void defaultResponse;
   void explicitBinaryResponse;
@@ -1507,6 +1531,12 @@ function assertCaptureReturnTypes(
   void htmlExplicitBinaryResponse;
   void htmlText;
   void htmlJsonResponse;
+  void fromHtmlDefault;
+  void fromHtmlJson;
+  void fromHtmlMarkdown;
+  void fromHtmlHtml;
+  void fromHtmlDynamic;
+  void fromHtmlRequestOptions;
 }
 
 void assertCaptureReturnTypes;
@@ -1524,4 +1554,224 @@ test("method values are closed while service string values remain open", () => {
   assert.equal(futureFormat, "future-format");
   void invalidMethod;
   void invalidCaptureOptions;
+});
+
+const INVOICE_HTML =
+  '<!doctype html>\n<html><head><title>Invoice #1042</title></head><body><h1>Invoice #1042 for Zoë & "Café"</h1></body></html>\n';
+
+test("captureFromHtml sends the HTML first in a POST body, exactly as given", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    fetch: transport.fetch,
+  });
+
+  await client.captureFromHtml(`  ${INVOICE_HTML}  `, {
+    format: CaptureFormat.PDF,
+    pdfPrintBackground: true,
+    cookies: ["session=abc; Domain=example.com"],
+  });
+
+  assert.equal(transport.calls.length, 1);
+  const call = transport.calls[0]!;
+  assert.equal(call.init?.method, CaptureHttpMethod.POST);
+  assert.equal(callUrl(call).search, "");
+  assert.equal(callHeaders(call).get("authorization"), "Bearer ak_test");
+  assert.equal(callHeaders(call).get("content-type"), "application/json");
+  const body = callJsonBody(call);
+  assert.deepEqual(Object.keys(body), [
+    "html",
+    "format",
+    "cookies",
+    "pdf_print_background",
+  ]);
+  assert.equal(body.html, `  ${INVOICE_HTML}  `);
+  assert.equal(body.format, "pdf");
+  assert.equal(String(call.init?.body).includes("<title>"), true);
+});
+
+test("captureFromHtml decodes responses the same way as capture", async () => {
+  const binary = recordingFetch(
+    () =>
+      new Response(Uint8Array.of(37, 80, 68, 70), {
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "screenshot-scout-screenshot-url": "https://cdn.example.com/a.pdf",
+        },
+      }),
+  );
+  const binaryClient = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: binary.fetch,
+  });
+  const pdf = await binaryClient.captureFromHtml(INVOICE_HTML, {
+    format: CaptureFormat.PDF,
+  });
+  assert.equal(pdf.kind, "binary");
+  assert.deepEqual([...pdf.bytes], [37, 80, 68, 70]);
+  assert.equal(pdf.screenshotUrl, "https://cdn.example.com/a.pdf");
+
+  const json = recordingFetch(
+    () =>
+      new Response(
+        JSON.stringify({ screenshot_url: "https://cdn.example.com/b.png" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  );
+  const jsonClient = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: json.fetch,
+  });
+  const result = await jsonClient.captureFromHtml(INVOICE_HTML, {
+    responseType: CaptureResponseType.JSON,
+  });
+  assert.equal(result.kind, "json");
+  assert.equal(result.result.screenshotUrl, "https://cdn.example.com/b.png");
+});
+
+test("captureFromHtml refuses before sending when the client has a secret key", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "ak_test",
+    secretKey: "sk_test",
+    fetch: transport.fetch,
+  });
+
+  await assert.rejects(client.captureFromHtml(INVOICE_HTML), {
+    name: "ScreenshotScoutConfigurationError",
+    message:
+      "`captureFromHtml` sends the HTML in a POST body, which can't be signed. This client has a secret key: use a client without a secret key and an API key that doesn't require signed requests.",
+  });
+  assert.equal(transport.calls.length, 0);
+});
+
+test("captureFromHtml names the variable a secret key came from", async () => {
+  await withEnvironment(
+    {
+      SCREENSHOTSCOUT_ACCESS_KEY: "ak_env",
+      SCREENSHOTSCOUT_SECRET_KEY: "sk_env",
+    },
+    async () => {
+      const transport = recordingFetch();
+      const client = new ScreenshotScoutClient({ fetch: transport.fetch });
+
+      await assert.rejects(client.captureFromHtml(INVOICE_HTML), {
+        name: "ScreenshotScoutConfigurationError",
+        message:
+          "`captureFromHtml` sends the HTML in a POST body, which can't be signed. This client has a secret key from SCREENSHOTSCOUT_SECRET_KEY: use a client without a secret key and an API key that doesn't require signed requests.",
+      });
+      assert.equal(transport.calls.length, 0);
+    },
+  );
+});
+
+test("captureFromHtml checks only that the HTML is a string", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  for (const html of [undefined, null, 42, ["<p>a</p>"]]) {
+    await assert.rejects(
+      client.captureFromHtml(html as never),
+      (error: unknown) => {
+        assert.equal(error instanceof ScreenshotScoutSerializationError, true);
+        if (!(error instanceof ScreenshotScoutSerializationError)) return false;
+        assert.equal(error.option, "html");
+        assert.equal(error.message, "The HTML to capture must be a string.");
+        return true;
+      },
+    );
+  }
+  assert.equal(transport.calls.length, 0);
+
+  // Empty HTML is the API's to judge.
+  await client.captureFromHtml("");
+  assert.deepEqual(callJsonBody(transport.calls[0]!), { html: "" });
+});
+
+test("neither capture method takes the other's target as an option, and HTML has no method", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  await assert.rejects(
+    client.captureFromHtml(INVOICE_HTML, {
+      url: "https://example.com",
+    } as never),
+    { name: "ScreenshotScoutSerializationError", option: "url" },
+  );
+  await assert.rejects(
+    client.capture("https://example.com", { html: INVOICE_HTML } as never),
+    { name: "ScreenshotScoutSerializationError", option: "html" },
+  );
+  await assert.rejects(
+    client.captureFromHtml(INVOICE_HTML, undefined, {
+      method: CaptureHttpMethod.GET,
+    } as never),
+    {
+      name: "ScreenshotScoutSerializationError",
+      message: 'Unknown capture request option "method".',
+      option: "method",
+    },
+  );
+  assert.equal(transport.calls.length, 0);
+});
+
+test("captureFromHtml cancellation follows AbortSignal semantics", async () => {
+  const transport = recordingFetch();
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+  const controller = new AbortController();
+  const reason = new DOMException("stop", "AbortError");
+  controller.abort(reason);
+
+  await assert.rejects(
+    client.captureFromHtml(INVOICE_HTML, undefined, {
+      signal: controller.signal,
+    }),
+    (error: unknown) => error === reason,
+  );
+  assert.equal(transport.calls.length, 0);
+
+  const live = new AbortController();
+  await client.captureFromHtml(INVOICE_HTML, undefined, {
+    signal: live.signal,
+  });
+  assert.equal(transport.calls[0]!.init?.signal, live.signal);
+});
+
+test("a body over the API's size limit arrives as an API error", async () => {
+  const transport = recordingFetch(
+    () =>
+      new Response(
+        '{"error_code":"request_too_large","error_message":"The request body must be at most 5 MB."}',
+        { status: 413, headers: { "content-type": "application/json" } },
+      ),
+  );
+  const client = new ScreenshotScoutClient({
+    accessKey: "key",
+    fetch: transport.fetch,
+  });
+
+  await assert.rejects(
+    client.captureFromHtml(INVOICE_HTML),
+    (error: unknown) => {
+      assert.equal(error instanceof ScreenshotScoutApiError, true);
+      if (!(error instanceof ScreenshotScoutApiError)) return false;
+      assert.equal(error.status, 413);
+      assert.equal(error.errorCode, "request_too_large");
+      assert.equal(
+        error.errorMessage,
+        "The request body must be at most 5 MB.",
+      );
+      return true;
+    },
+  );
 });

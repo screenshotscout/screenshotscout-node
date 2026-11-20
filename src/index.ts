@@ -22,6 +22,7 @@ export {
 export type {
   BinaryCaptureOptions,
   BinaryCaptureResponse,
+  CaptureFromHtmlRequestOptions,
   CaptureOptions,
   CaptureRequestOptions,
   CaptureResponse,

@@ -3,7 +3,11 @@ import {
   ScreenshotScoutSerializationError,
 } from "./errors.js";
 import { CaptureHttpMethod } from "./types.js";
-import type { CaptureOptions, CaptureRequestOptions } from "./types.js";
+import type {
+  CaptureFromHtmlRequestOptions,
+  CaptureOptions,
+  CaptureRequestOptions,
+} from "./types.js";
 
 type WireScalar = string | number | boolean;
 export type WireJsonValue = WireScalar | WireScalar[];
@@ -19,6 +23,14 @@ export interface SerializedCaptureRequest extends SerializedCaptureOptions {
   readonly method: CaptureHttpMethod | undefined;
   readonly signal: AbortSignal | undefined;
 }
+
+/** An HTML capture is always a POST request, so it has no method to choose. */
+export interface SerializedHtmlCaptureRequest extends SerializedCaptureOptions {
+  readonly signal: AbortSignal | undefined;
+}
+
+/** What to capture: a page's URL, or an HTML document. It's written first, before the options. */
+type CaptureTarget = readonly [name: "url" | "html", value: string];
 
 const WIRE_NAMES = {
   format: "format",
@@ -103,13 +115,47 @@ const REPEATED_OPTIONS = new Set<keyof CaptureOptions>([
 
 const ALLOWED_OPTION_KEYS = new Set<string>(Object.keys(WIRE_NAMES));
 const ALLOWED_REQUEST_OPTION_KEYS = new Set<string>(["method", "signal"]);
+const ALLOWED_HTML_REQUEST_OPTION_KEYS = new Set<string>(["signal"]);
 
 export function serializeCaptureOptions(
   targetUrl: string,
   options?: CaptureOptions | null,
 ): SerializedCaptureOptions {
+  return serializeTargetAndOptions(["url", targetUrl], options);
+}
+
+export function serializeCaptureRequest(
+  targetUrl: string,
+  options?: CaptureOptions | null,
+  captureRequestOptions?: CaptureRequestOptions | null,
+): SerializedCaptureRequest {
+  const serialized = serializeCaptureOptions(targetUrl, options);
+  const request = serializeRequestOptions(
+    captureRequestOptions,
+    ALLOWED_REQUEST_OPTION_KEYS,
+  );
+  return { ...serialized, ...request };
+}
+
+export function serializeHtmlCaptureRequest(
+  html: string,
+  options?: CaptureOptions | null,
+  requestOptions?: CaptureFromHtmlRequestOptions | null,
+): SerializedHtmlCaptureRequest {
+  const serialized = serializeTargetAndOptions(["html", html], options);
+  const { signal } = serializeRequestOptions(
+    requestOptions,
+    ALLOWED_HTML_REQUEST_OPTION_KEYS,
+  );
+  return { ...serialized, signal };
+}
+
+function serializeTargetAndOptions(
+  target: CaptureTarget,
+  options?: CaptureOptions | null,
+): SerializedCaptureOptions {
   try {
-    return serializeCaptureOptionsUnsafe(targetUrl, options);
+    return serializeTargetAndOptionsUnsafe(target, options);
   } catch (error) {
     if (error instanceof ScreenshotScoutError) throw error;
     throw new ScreenshotScoutSerializationError(
@@ -120,16 +166,12 @@ export function serializeCaptureOptions(
   }
 }
 
-export function serializeCaptureRequest(
-  targetUrl: string,
-  options?: CaptureOptions | null,
-  captureRequestOptions?: CaptureRequestOptions | null,
-): SerializedCaptureRequest {
-  const serialized = serializeCaptureOptions(targetUrl, options);
-
+function serializeRequestOptions(
+  requestOptions: CaptureRequestOptions | null | undefined,
+  allowedKeys: ReadonlySet<string>,
+): Pick<SerializedCaptureRequest, "method" | "signal"> {
   try {
-    const request = serializeCaptureRequestOptionsUnsafe(captureRequestOptions);
-    return { ...serialized, ...request };
+    return serializeRequestOptionsUnsafe(requestOptions, allowedKeys);
   } catch (error) {
     if (error instanceof ScreenshotScoutError) throw error;
     throw new ScreenshotScoutSerializationError(
@@ -140,14 +182,16 @@ export function serializeCaptureRequest(
   }
 }
 
-function serializeCaptureOptionsUnsafe(
-  targetUrl: string,
+function serializeTargetAndOptionsUnsafe(
+  [targetName, targetValue]: CaptureTarget,
   options?: CaptureOptions | null,
 ): SerializedCaptureOptions {
-  if (typeof targetUrl !== "string") {
+  if (typeof targetValue !== "string") {
     throw new ScreenshotScoutSerializationError(
-      "The capture target URL must be a string.",
-      "url",
+      targetName === "url"
+        ? "The capture target URL must be a string."
+        : "The HTML to capture must be a string.",
+      targetName,
     );
   }
 
@@ -170,8 +214,8 @@ function serializeCaptureOptionsUnsafe(
     }
   }
 
-  const pairs: WirePair[] = [["url", targetUrl]];
-  const body: Record<string, WireJsonValue> = { url: targetUrl };
+  const pairs: WirePair[] = [[targetName, targetValue]];
+  const body: Record<string, WireJsonValue> = { [targetName]: targetValue };
 
   for (const property of Object.keys(WIRE_NAMES) as Array<
     keyof CaptureOptions
@@ -218,8 +262,9 @@ function serializeCaptureOptionsUnsafe(
   return { pairs, body };
 }
 
-function serializeCaptureRequestOptionsUnsafe(
-  captureRequestOptions?: CaptureRequestOptions | null,
+function serializeRequestOptionsUnsafe(
+  captureRequestOptions: CaptureRequestOptions | null | undefined,
+  allowedKeys: ReadonlySet<string>,
 ): Pick<SerializedCaptureRequest, "method" | "signal"> {
   if (
     captureRequestOptions !== undefined &&
@@ -233,7 +278,7 @@ function serializeCaptureRequestOptionsUnsafe(
   }
 
   for (const key of Object.keys(captureRequestOptions ?? {})) {
-    if (!ALLOWED_REQUEST_OPTION_KEYS.has(key)) {
+    if (!allowedKeys.has(key)) {
       throw new ScreenshotScoutSerializationError(
         `Unknown capture request option "${key}".`,
         key,

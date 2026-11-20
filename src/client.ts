@@ -19,12 +19,14 @@ import {
   encodeQueryPairs,
   serializeCaptureOptions,
   serializeCaptureRequest,
+  serializeHtmlCaptureRequest,
 } from "./serialization.js";
-import type { WirePair } from "./serialization.js";
+import type { SerializedCaptureOptions, WirePair } from "./serialization.js";
 import { CaptureHttpMethod } from "./types.js";
 import type {
   BinaryCaptureOptions,
   BinaryCaptureResponse,
+  CaptureFromHtmlRequestOptions,
   CaptureOptions,
   CaptureRequestOptions,
   CaptureResponse,
@@ -181,9 +183,73 @@ export class ScreenshotScoutClient {
       (this.#secretKey === undefined
         ? CaptureHttpMethod.POST
         : CaptureHttpMethod.GET);
+    return this.#send(method, serialized, serialized.signal, captureOptions);
+  }
+
+  /**
+   * Captures an HTML document instead of a URL, such as an invoice or a report you generated.
+   * The HTML is sent exactly as given, in a POST request. A client with a secret key refuses it,
+   * because POST requests can't be signed.
+   */
+  captureFromHtml(
+    html: string,
+    captureOptions: JsonCaptureOptions,
+    requestOptions?: CaptureFromHtmlRequestOptions | null,
+  ): Promise<JsonCaptureResponse>;
+  captureFromHtml(
+    html: string,
+    captureOptions: MarkdownCaptureOptions,
+    requestOptions?: CaptureFromHtmlRequestOptions | null,
+  ): Promise<MarkdownCaptureResponse>;
+  captureFromHtml(
+    html: string,
+    captureOptions: HtmlCaptureOptions,
+    requestOptions?: CaptureFromHtmlRequestOptions | null,
+  ): Promise<HtmlCaptureResponse>;
+  captureFromHtml(
+    html: string,
+    captureOptions?: BinaryCaptureOptions | null,
+    requestOptions?: CaptureFromHtmlRequestOptions | null,
+  ): Promise<BinaryCaptureResponse>;
+  captureFromHtml(
+    html: string,
+    captureOptions: CaptureOptions | null | undefined,
+    requestOptions?: CaptureFromHtmlRequestOptions | null,
+  ): Promise<CaptureResponse>;
+  async captureFromHtml(
+    html: string,
+    captureOptions?: CaptureOptions | null,
+    requestOptions?: CaptureFromHtmlRequestOptions | null,
+  ): Promise<CaptureResponse> {
+    const serialized = serializeHtmlCaptureRequest(
+      html,
+      captureOptions,
+      requestOptions,
+    );
+    if (this.#secretKey !== undefined) {
+      const source = this.#secretKeyFromEnvironment
+        ? ` from ${SECRET_KEY_VARIABLE}`
+        : "";
+      throw new ScreenshotScoutConfigurationError(
+        `\`captureFromHtml\` sends the HTML in a POST body, which can't be signed. This client has a secret key${source}: use a client without a secret key and an API key that doesn't require signed requests.`,
+      );
+    }
+    return this.#send(
+      CaptureHttpMethod.POST,
+      serialized,
+      serialized.signal,
+      captureOptions,
+    );
+  }
+
+  async #send(
+    method: CaptureHttpMethod,
+    serialized: SerializedCaptureOptions,
+    signal: AbortSignal | undefined,
+    captureOptions: CaptureOptions | null | undefined,
+  ): Promise<CaptureResponse> {
     const expectedResponseKind = getExpectedResponseKind(captureOptions);
-    throwIfAborted(serialized.signal);
-    const signature = this.#createSignature(serialized.pairs);
+    throwIfAborted(signal);
 
     let requestUrlText = this.#captureEndpoint;
     const headers = new Headers({
@@ -196,6 +262,7 @@ export class ScreenshotScoutClient {
     };
 
     if (method === CaptureHttpMethod.GET) {
+      const signature = this.#createSignature(serialized.pairs);
       const pairs: WirePair[] = [...serialized.pairs];
       if (signature !== undefined) pairs.push(["signature", signature]);
       requestUrlText += `?${encodeQueryPairs(pairs)}`;
@@ -212,8 +279,8 @@ export class ScreenshotScoutClient {
       }
     }
 
-    if (serialized.signal !== undefined) {
-      requestInit.signal = serialized.signal;
+    if (signal !== undefined) {
+      requestInit.signal = signal;
     }
 
     let rawResponse: RawResponse;
@@ -224,7 +291,7 @@ export class ScreenshotScoutClient {
       const body = new Uint8Array(await response.arrayBuffer());
       rawResponse = createRawResponse(response, body);
     } catch (cause) {
-      if (serialized.signal?.aborted) {
+      if (signal?.aborted) {
         throw cause;
       }
       const source = this.#baseUrlFromEnvironment
